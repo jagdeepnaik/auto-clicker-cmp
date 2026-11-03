@@ -1,0 +1,91 @@
+name: Desktop packages
+
+# CI builds only the installers a Mac cannot build: Windows, Linux and Intel macOS.
+# Android, Apple Silicon macOS and iOS release builds are made locally on a Mac.
+# A manual run builds Windows only unless "all" is chosen; a version tag builds everything.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Installers to build
+        type: choice
+        options:
+          - windows
+          - all
+        default: windows
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          architecture: x64
+          cache: gradle
+
+      - name: Build Windows package
+        shell: pwsh
+        run: .\gradlew.bat --no-daemon :composeApp:packageReleaseMsi
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: AutoClicker-windows-x64
+          path: composeApp/build/compose/binaries/main-release/msi/*.msi
+          if-no-files-found: error
+
+  other:
+    name: ${{ matrix.name }}
+    if: github.event_name == 'push' || inputs.platforms == 'all'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Debian Ubuntu Linux x64
+            os: ubuntu-latest
+            java_architecture: x64
+            gradle_task: :composeApp:packageReleaseDeb
+            artifact_name: AutoClicker-linux-x64
+            artifact_path: composeApp/build/compose/binaries/main-release/deb/*.deb
+          - name: macOS Intel
+            os: macos-15-intel
+            java_architecture: x64
+            gradle_task: :composeApp:packageReleaseDmg
+            artifact_name: AutoClicker-macos-x64
+            artifact_path: composeApp/build/compose/binaries/main-release/dmg/*.dmg
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          architecture: ${{ matrix.java_architecture }}
+          cache: gradle
+
+      - name: Build desktop package
+        run: chmod +x gradlew && ./gradlew --no-daemon ${{ matrix.gradle_task }}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error

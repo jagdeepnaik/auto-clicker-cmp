@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "AutoClicker Page Helper",
+  "version": "1.1.0",
+  "description": "Scrolls, highlights the next button, and clicks it only when you press the key in AutoClicker. Reports when a page reaches the bottom so the app can click a spot you picked. Talks only to the app on this computer.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqk61K04trRdqbO3XYOebDxqvvDZ87GJzVAoN+2E4qvqSBiCZ6vkrNcfDhAxm/3S6TChSUFqqY5VvV7eBCD4K8anaFtmZxs3xmBOpa6rFQNXbuaCzISNWzySgA3MqrFcZ+bdzUo+OEE7Yna3uLYTsy17mQVrlbx4Fh5gr5oL2jpGVrF7GNKO1wOBn0TC0V5qB/H/Xx+TcvPsDXpzN59YjpRD7VKVaEEYxFpKw9x4Dp/lFbAimSPXlwJExZz0LRNOoDSFoz4MRn+60yePsroePmTtVDIB6lG42IMrOQYMpi5j9H5mDfMZwYZHNvmFlcyuGGDaCDj6VBLeB73/MMI8PvQIDAQAB",
+  "permissions": ["alarms"],
+  "host_permissions": ["http://127.0.0.1:47613/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    { "matches": ["<all_urls>"], "js": ["content.js"], "all_frames": true, "match_about_blank": true, "run_at": "document_idle" }
+  ]
+}

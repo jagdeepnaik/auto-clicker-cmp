@@ -1,0 +1,31 @@
+*.iml
+.kotlin
+.gradle
+**/build/
+xcuserdata
+!src/**/build/
+local.properties
+.idea
+.DS_Store
+captures
+.externalNativeBuild
+.cxx
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+**/xcshareddata/WorkspaceSettings.xcsettings
+node_modules/
+
+# Personal notes stay local
+/private/misc/
+
+# Read-only reference copy of the template
+/private/zynk-cmp-main/
+
+# Android release signing: never commit
+/private/signing/
+keystore.properties
+*.jks
+*.keystore
