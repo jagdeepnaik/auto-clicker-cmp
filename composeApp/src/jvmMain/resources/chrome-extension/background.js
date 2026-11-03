@@ -51,6 +51,13 @@ function frameEntries(tabId) {
   return [...frames.values()].filter((f) => f.tabId === tabId && now - f.at < STALE_MILLIS);
 }
 
+// A video in any frame holds up the whole page: it may well sit in an iframe of its own.
+function videoState(tabId) {
+  const states = frameEntries(tabId).map((f) => f.video);
+  if (states.includes("playing")) return "playing";
+  return states.includes("needsPlay") ? "needsPlay" : "none";
+}
+
 function selectedFrame(tabId) {
   const found = frameEntries(tabId).filter((f) => f.rank !== null);
   found.sort((a, b) => a.rank - b.rank || a.frameId - b.frameId);
@@ -79,10 +86,10 @@ function reportPage(page) {
 }
 
 // Only the frame being scrolled speaks for the page; the top frame does when nothing scrolls.
-async function reportPageFrom(frameId, scroller, reading) {
+async function reportPageFrom(frameId, scroller, reading, video) {
   if (!reading || frameId !== (scroller ? scroller.frameId : 0)) return;
   const window = await chrome.windows.getLastFocused();
-  const page = { focused: window.focused, atBottom: reading.atBottom, signature: reading.signature };
+  const page = { focused: window.focused, atBottom: reading.atBottom, signature: reading.signature, video };
   if (JSON.stringify(page) !== JSON.stringify(lastPage)) reportPage(page);
 }
 
@@ -91,7 +98,7 @@ async function onTick(message, sender) {
   const frameId = sender.frameId ?? 0;
   const active = tabId !== undefined && tabId === (await activeTabId());
   if (!command || !command.enabled || !active) return { enabled: false };
-  frames.set(`${tabId}:${frameId}`, { tabId, frameId, rank: message.rank, label: message.label, area: message.area, at: Date.now() });
+  frames.set(`${tabId}:${frameId}`, { tabId, frameId, rank: message.rank, label: message.label, area: message.area, video: message.video, at: Date.now() });
   const selected = selectedFrame(tabId);
   const label = selected ? selected.label : null;
   if (label !== lastReported) {
@@ -99,12 +106,14 @@ async function onTick(message, sender) {
     report({ type: "found", label });
   }
   const scroller = scrollerFrame(tabId);
-  if (command.autoRun) await reportPageFrom(frameId, scroller, message.reading);
+  const video = command.autoRun ? videoState(tabId) : "none";
+  if (command.autoRun) await reportPageFrom(frameId, scroller, message.reading, video);
   return {
     enabled: true,
     words: command.words,
-    scrolling: command.scrolling && scroller?.frameId === frameId,
+    scrolling: command.scrolling && scroller?.frameId === frameId && video === "none",
     autoRun: !!command.autoRun,
+    watchVideos: !!command.watchVideos,
     pixelsPerSecond: command.pixelsPerSecond,
     selected: selected?.frameId === frameId,
   };

@@ -180,6 +180,8 @@ private fun StatusPanel(state: PageHelperUiState, viewModel: PageHelperViewModel
 private fun scrollClickDetail(run: ScrollClickProgress): String = when (run.phase) {
     ScrollClickPhase.WaitingForChrome -> "Bring Chrome to the front to continue. Clicks so far: ${run.clicks}."
     ScrollClickPhase.Scrolling -> "Scrolling to the bottom. Clicks so far: ${run.clicks}."
+    ScrollClickPhase.WatchingVideo -> "Playing a video. It carries on when the video ends. Clicks so far: ${run.clicks}."
+    ScrollClickPhase.VideoNeedsPlay -> "Press play on the video in Chrome. It carries on when the video ends."
     ScrollClickPhase.AtBottom -> "Reached the bottom. Clicking soon."
     ScrollClickPhase.WaitingForPage -> "Clicked. Waiting for the page to change. Clicks so far: ${run.clicks}."
 }
@@ -206,6 +208,21 @@ private fun ScrollClickSection(state: PageHelperUiState, viewModel: PageHelperVi
             FilledTonalButton(onClick = viewModel::startPickingPoint, enabled = helper.scrollClick == null) {
                 Text(if (point == null) "Pick on screen" else "Pick again")
             }
+        }
+        Row(
+            Modifier.fillMaxWidth().toggleable(value = helper.settings.watchVideos, role = Role.Switch, enabled = helper.scrollClick == null, onValueChange = viewModel::setWatchVideos),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Stop for videos", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Plays each video it reaches and carries on when it ends.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
+            }
+            Switch(checked = helper.settings.watchVideos, onCheckedChange = null, enabled = helper.scrollClick == null)
         }
         OutlinedTextField(
             value = state.roundsDraft,

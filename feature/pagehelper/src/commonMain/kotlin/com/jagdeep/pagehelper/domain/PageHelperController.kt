@@ -39,6 +39,8 @@ data class PageHelperSettings(
     /** Scroll and click: the screen position to click at the bottom of each page. */
     val clickPoint: SavedPoint? = null,
     val scrollClickRounds: Int = DEFAULT_SCROLL_CLICK_ROUNDS,
+    /** Scroll and click: stops for each video it reaches, plays it, and goes on when it ends. */
+    val watchVideos: Boolean = true,
 )
 
 @Serializable
@@ -79,6 +81,7 @@ internal data class HelperCommand(
     val advance: Long,
     /** The app clicks by itself in this mode, so the extension reports where the page is. */
     val autoRun: Boolean = false,
+    val watchVideos: Boolean = false,
 )
 
 @Serializable
@@ -88,6 +91,7 @@ internal data class HelperEvent(
     val focused: Boolean = false,
     val atBottom: Boolean = false,
     val signature: String? = null,
+    val video: String? = null,
 )
 
 /**
@@ -163,6 +167,8 @@ class PageHelperController(
 
     fun setScrollClickRounds(rounds: Int) =
         updateSettings { it.copy(scrollClickRounds = rounds.coerceIn(MIN_SCROLL_CLICK_ROUNDS, MAX_SCROLL_CLICK_ROUNDS)) }
+
+    fun setWatchVideos(enabled: Boolean) = updateSettings { it.copy(watchVideos = enabled) }
 
     /** The next press of the capture key records where the pointer is. */
     fun startPickingPoint() = mutableState.update { it.copy(isPickingPoint = true) }
@@ -283,8 +289,14 @@ class PageHelperController(
         when (event.type) {
             "found" -> mutableState.update { it.copy(foundLabel = event.label?.take(MAX_LABEL_LENGTH)) }
             "videoEnded" -> if (state.value.settings.soundOnVideoEnd) automation.playAlert()
-            "page" -> pageReading.value = PageReading(event.focused, event.atBottom, event.signature?.take(MAX_SIGNATURE_LENGTH))
+            "page" -> pageReading.value = PageReading(event.focused, event.atBottom, event.signature?.take(MAX_SIGNATURE_LENGTH), pageVideo(event.video))
         }
+    }
+
+    private fun pageVideo(reported: String?): PageVideo = when (reported) {
+        "playing" -> PageVideo.Playing
+        "needsPlay" -> PageVideo.NeedsPlay
+        else -> PageVideo.None
     }
 
     private fun updateSettings(change: (PageHelperSettings) -> PageHelperSettings) {
@@ -303,6 +315,7 @@ class PageHelperController(
             words = current.settings.words,
             advance = advance,
             autoRun = current.scrollClick != null,
+            watchVideos = current.settings.watchVideos,
         )
         bridge.publish(json.encodeToString(HelperCommand.serializer(), command))
     }

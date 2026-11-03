@@ -72,6 +72,32 @@ class LiveChromeExtensionTest {
         </body></html>
     """.trimIndent()
 
+    /** A stand-in for playback: no media file is needed, and the page reports what was asked of it. */
+    private val videoPage = """
+        <!doctype html><html><body style="height:5000px;margin:0">
+        <video id="deco" loop style="width:300px;height:150px;display:block"></video>
+        <video id="main" style="width:300px;height:150px;display:block"></video>
+        <script>
+          const notifyTest = (what) => fetch('/report?what=' + what);
+          const fakeVideo = (element, name, millis) => {
+            let paused = true, ended = false;
+            Object.defineProperty(element, 'paused', { get: () => paused });
+            Object.defineProperty(element, 'ended', { get: () => ended });
+            element.play = () => {
+              notifyTest(name + '-play');
+              paused = false;
+              setTimeout(() => { paused = true; ended = true; notifyTest(name + '-ended'); }, millis);
+              return Promise.resolve();
+            };
+          };
+          fakeVideo(document.getElementById('deco'), 'deco', 1000);
+          fakeVideo(document.getElementById('main'), 'main', 5000);
+          setInterval(() => notifyTest('y-' + Math.round(window.scrollY)), 200);
+        </script>
+        <script src="/stub.js"></script><script src="/background.js"></script><script src="/content.js"></script>
+        </body></html>
+    """.trimIndent()
+
     private fun waitFor(what: String, condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 30_000
         while (!condition()) {
@@ -88,6 +114,54 @@ class LiveChromeExtensionTest {
     }
 
     private fun bundled(name: String) = javaClass.getResourceAsStream("/chrome-extension/$name")!!.bufferedReader().readText()
+
+    @Test
+    fun `given a scroll and click run in Chrome when it reaches a video then it plays it, holds the page, and goes on only after it ends`() {
+        if (chrome == null) return
+        val reports = ConcurrentLinkedQueue<String>()
+        val linkPort = ServerSocket(0).use { it.localPort }
+        val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
+            createContext("/report") { exchange ->
+                reports += exchange.requestURI.query.substringAfter('=')
+                exchange.sendResponseHeaders(204, -1)
+                exchange.close()
+            }
+            createContext("/stub.js") { it.send("text/javascript", stub) }
+            createContext("/background.js") { it.send("text/javascript", bundled("background.js").replace("$BROWSER_LINK_PORT", "$linkPort")) }
+            createContext("/content.js") { it.send("text/javascript", bundled("content.js")) }
+            createContext("/") { it.send("text/html", videoPage) }
+            start()
+        }
+        val bridge = createLocalBridge(linkPort, "http://127.0.0.1:${server.address.port}")
+        val incoming = ConcurrentLinkedQueue<String>()
+        val scope = CoroutineScope(Dispatchers.Default)
+        scope.launch { bridge.incoming.collect { incoming += it } }
+        bridge.publish("""{"enabled":true,"scrolling":true,"pixelsPerSecond":2000,"words":[],"advance":0,"autoRun":true,"watchVideos":true}""")
+        val profile = Files.createTempDirectory("autoclicker-chrome").toFile()
+        val process = ProcessBuilder(chrome, "--headless=new", "--no-first-run", "--user-data-dir=${profile.absolutePath}", "http://127.0.0.1:${server.address.port}/")
+            .redirectErrorStream(true).redirectOutput(File(profile, "chrome.log")).start()
+        try {
+            waitFor("the video to start") { "main-play" in reports }
+            waitFor("the app to hear it's playing") { incoming.any { "\"video\":\"playing\"" in it } }
+            Thread.sleep(1_500)
+            assertFalse("main-ended" in reports, "Still playing")
+            assertFalse(incoming.any { "\"atBottom\":true" in it && "\"video\":\"none\"" in it }, "It must not report a clear bottom during the video")
+            val heldAt = reports.last { it.startsWith("y-") }
+            Thread.sleep(1_000)
+            assertEquals(heldAt, reports.last { it.startsWith("y-") }, "It must not scroll during the video")
+
+            waitFor("the video to end") { "main-ended" in reports }
+            waitFor("the bottom after the video") { incoming.any { "\"atBottom\":true" in it && "\"video\":\"none\"" in it } }
+            assertEquals(1, reports.count { it == "main-play" }, "It plays a video once")
+            assertFalse("deco-play" in reports, "A looping video is decoration")
+        } finally {
+            process.destroyForcibly().waitFor()
+            scope.cancel()
+            bridge.close()
+            server.stop(0)
+            profile.deleteRecursively()
+        }
+    }
 
     @Test
     fun `given the real scripts in Chrome when keys are reported then it highlights, clicks once per press, scrolls and hears videos`() {

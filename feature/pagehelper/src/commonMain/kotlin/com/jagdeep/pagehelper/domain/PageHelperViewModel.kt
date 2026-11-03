@@ -72,6 +72,8 @@ class PageHelperViewModel(
         if (rounds != null) controller.setScrollClickRounds(rounds)
     }
 
+    fun setWatchVideos(enabled: Boolean) = controller.setWatchVideos(enabled)
+
     fun startPickingPoint() = controller.startPickingPoint()
 
     fun cancelPickingPoint() = controller.cancelPickingPoint()

@@ -1,6 +1,7 @@
 // Runs in each frame. Finds the next-step button, highlights it, scrolls, and notices videos ending.
 // It clicks only when told to after a key press, and skips anything disabled.
-// During a scroll and click run it also reports whether the page has reached the bottom.
+// During a scroll and click run it also reports whether the page has reached the bottom, and starts
+// each video it reaches. Videos play as the page set them: never faster, and never skipped ahead.
 (() => {
   if (window.__autoClickerHelper) return;
   window.__autoClickerHelper = true;
@@ -10,6 +11,7 @@
   const MAX_LABEL_LENGTH = 40;
   const BOTTOM_TOLERANCE_PIXELS = 2;
   const MAX_HASHED_CHARACTERS = 200000;
+  const VIDEO_END_TOLERANCE_SECONDS = 0.5;
   // Older course pages often use links without an href, or plain elements with an onclick handler.
   const CLICKABLE = 'button, a, summary, [onclick], [role="button"], [role="link"], input[type="button"], input[type="submit"]';
 
@@ -20,6 +22,22 @@
   let lastFrameTime = null;
   let carry = 0;
   const watchedVideos = new WeakSet();
+  const videosInView = new WeakSet();
+  const videosReached = new WeakSet();
+  const videosStarted = new WeakSet();
+  const videosFinished = new WeakSet();
+  const videosRefused = new WeakSet();
+  const videoViewObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) {
+        videosInView.delete(entry.target);
+        continue;
+      }
+      videosInView.add(entry.target);
+      // Remembered, so a fast scroll past a video still stops for it.
+      if (isWatchingVideos()) videosReached.add(entry.target);
+    }
+  }, { threshold: 0.25 });
 
   function allRoots() {
     const roots = [document];
@@ -112,9 +130,60 @@
       for (const video of root.querySelectorAll("video")) {
         if (watchedVideos.has(video)) continue;
         watchedVideos.add(video);
+        videoViewObserver.observe(video);
         video.addEventListener("ended", () => chrome.runtime.sendMessage({ type: "videoEnded" }).catch(() => {}));
       }
     }
+  }
+
+  function isWatchingVideos() {
+    return settings.enabled && settings.autoRun && settings.watchVideos;
+  }
+
+  // Looping or silent autoplaying videos are decoration, and a live stream never ends.
+  function isWorthWatching(video) {
+    if (video.loop || (video.muted && video.autoplay) || video.duration === Infinity) return false;
+    const box = video.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) return false;
+    const style = getComputedStyle(video);
+    return style.visibility !== "hidden" && style.display !== "none";
+  }
+
+  function hasFinished(video) {
+    if (video.ended || videosFinished.has(video)) return true;
+    return Number.isFinite(video.duration) && video.duration > 0 && video.currentTime >= video.duration - VIDEO_END_TOLERANCE_SECONDS;
+  }
+
+  function startVideo(video) {
+    videosStarted.add(video);
+    video.scrollIntoView({ block: "center" });
+    Promise.resolve(video.play()).catch((error) => {
+      // Browsers can refuse to start sound by themselves. Nothing to play means nothing to wait for.
+      if (error.name === "NotAllowedError") videosRefused.add(video);
+      else if (error.name === "NotSupportedError") videosFinished.add(video);
+    });
+  }
+
+  // "playing", "needsPlay" or "none". Once started, a pause is left alone: it's the viewer's choice.
+  function checkVideos(roots) {
+    if (!isWatchingVideos()) return "none";
+    let needsPlay = false;
+    for (const root of roots) {
+      for (const video of root.querySelectorAll("video")) {
+        if (!isWorthWatching(video)) continue;
+        if (videosInView.has(video)) videosReached.add(video);
+        if (!videosReached.has(video)) continue;
+        // Before the finished check, because players reuse one element for several clips.
+        if (!video.paused && !video.ended) return "playing";
+        if (hasFinished(video)) continue;
+        if (!videosStarted.has(video)) {
+          startVideo(video);
+          return "playing";
+        }
+        needsPlay = true;
+      }
+    }
+    return needsPlay ? "needsPlay" : "none";
   }
 
   function clearHighlight() {
@@ -156,6 +225,7 @@
     let found = null;
     let area = 0;
     let reading = null;
+    let video = "none";
     if (settings.enabled) {
       const roots = allRoots();
       found = findButton(settings.words || [], roots);
@@ -164,10 +234,11 @@
       scroller = scroll.element;
       area = scroll.area;
       if (settings.autoRun) reading = readPage();
+      video = checkVideos(roots);
     }
     let response;
     try {
-      response = await chrome.runtime.sendMessage({ type: "tick", rank: found ? found.rank : null, label: found ? found.label : null, area, reading });
+      response = await chrome.runtime.sendMessage({ type: "tick", rank: found ? found.rank : null, label: found ? found.label : null, area, reading, video });
     } catch {
       if (!chrome.runtime?.id) {
         clearHighlight();

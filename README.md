@@ -26,6 +26,8 @@ For pages you're working through yourself, in your normal Chrome profile. It rem
 
 For long feeds, "load more" lists and paged documents, the helper can also run by itself: it scrolls to the bottom, clicks a spot you picked, waits for the page to change, and repeats. This is the one mode that clicks with no key press, and it's off until you start it.
 
+With **Stop for videos** on, it stops at each video it reaches and plays it so you can watch, at the speed the page set. When the video ends, it scrolls the rest of the way and clicks. If Chrome won't start a video by itself, or you pause one, it waits for you to press play. Looping and silent autoplaying videos are skipped, and it can't see players that don't use a standard video element.
+
 1. Turn on the page helper and press **Pick on screen**, then hold the pointer over the spot in Chrome and press **F7**.
 2. Set the number of rounds and press **Start scroll and click**.
 3. Bring Chrome to the front. It waits until you do, and pauses whenever another app is in front.

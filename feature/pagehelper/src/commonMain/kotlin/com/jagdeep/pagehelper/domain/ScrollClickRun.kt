@@ -10,6 +10,15 @@ import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 
+/** A video the run has stopped for. */
+internal enum class PageVideo {
+    None,
+    Playing,
+
+    /** The browser refused to start it, or it was paused: it's up to the user to press play. */
+    NeedsPlay,
+}
+
 /** What the extension last said about the page being scrolled. */
 internal data class PageReading(
     /** False while another app is in front, so a click would land in the wrong place. */
@@ -17,15 +26,17 @@ internal data class PageReading(
     val atBottom: Boolean,
     /** Identifies the page's contents at the bottom, to tell whether a click changed anything. */
     val signature: String?,
+    val video: PageVideo = PageVideo.None,
 )
 
-enum class ScrollClickPhase { WaitingForChrome, Scrolling, AtBottom, WaitingForPage }
+enum class ScrollClickPhase { WaitingForChrome, Scrolling, WatchingVideo, VideoNeedsPlay, AtBottom, WaitingForPage }
 
 data class ScrollClickProgress(val round: Int, val rounds: Int, val clicks: Long, val phase: ScrollClickPhase)
 
 /**
- * Scrolls to the bottom, clicks one point, waits for the page to change, and repeats. Safety checks
- * run throughout every wait, and it never clicks unless Chrome is in front.
+ * Scrolls to the bottom, stopping for any video until it ends, then clicks one point, waits for the
+ * page to change, and repeats. Safety checks run throughout every wait, and it never clicks unless
+ * Chrome is in front.
  */
 internal class ScrollClickRun(
     private val pointer: PointerDevice,
@@ -67,8 +78,20 @@ internal class ScrollClickRun(
                 safetyStop()?.let { return it }
                 val page = pages.value
                 when {
-                    page == null || !page.focused -> {
+                    page == null -> {
                         heldMillis = 0
+                        report(ScrollClickPhase.WaitingForChrome)
+                    }
+                    page.video != PageVideo.None -> {
+                        // However long it runs. The user may well use the pointer on the player.
+                        heldMillis = 0
+                        placedAt = null
+                        report(if (page.video == PageVideo.Playing) ScrollClickPhase.WatchingVideo else ScrollClickPhase.VideoNeedsPlay)
+                    }
+                    !page.focused -> {
+                        // The user may well move the pointer to bring Chrome forward.
+                        heldMillis = 0
+                        placedAt = null
                         report(ScrollClickPhase.WaitingForChrome)
                     }
                     !page.atBottom -> {
@@ -100,6 +123,8 @@ internal class ScrollClickRun(
             while (true) {
                 safetyStop()?.let { return it }
                 val page = pages.value
+                // A video starting means the click did something, whatever else stayed the same.
+                if (page != null && page.video != PageVideo.None) break
                 if (page != null && page.focused) {
                     if (!page.atBottom || page.signature != signatureBefore) break
                     waitedMillis += CHECK_MILLIS

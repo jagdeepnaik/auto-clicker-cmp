@@ -32,6 +32,8 @@ Started 2026-11-03. A desktop auto clicker for Chrome pages and other apps. macO
   mixed-DPI behaviour of the "moved the pointer" stop all need a real Windows machine.
 - Page helper: extension scripts and link tested in headless Chrome with stand-in `chrome.*` APIs. Loading through
   chrome://extensions, iframes in a real extension, and the alert sound still need a person to try them.
+- Stop for videos (2026-11-03): Scroll and click stops at each video, plays it at the page's speed for the owner to
+  watch, and goes on when it ends. It never changes speed or seeks, and never resumes a video that was paused.
 - Scroll and click: logic covered by tests with fakes; the extension's bottom report checked in headless Chrome with
   stand-in `chrome.*` APIs. A real OS click on a real page through the loaded extension still needs a person to try it.
 - Android and iOS: the shell runs and explains it is desktop-only.

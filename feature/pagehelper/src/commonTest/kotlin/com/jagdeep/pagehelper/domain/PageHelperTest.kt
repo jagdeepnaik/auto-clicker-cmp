@@ -100,9 +100,9 @@ class PageHelperTest {
         PageHelperController(desktop, bridge, store, MutableStateFlow(AppPreferences()), backgroundScope, history, { currentTime }, { "run" }, { otherRunActive })
             .also { runCurrent() }
 
-    private fun TestScope.page(atBottom: Boolean, signature: String? = "a", focused: Boolean = true) {
+    private fun TestScope.page(atBottom: Boolean, signature: String? = "a", focused: Boolean = true, video: String = "none") {
         val quoted = if (signature == null) "null" else "\"$signature\""
-        bridge.messages.tryEmit("""{"type":"page","focused":$focused,"atBottom":$atBottom,"signature":$quoted}""")
+        bridge.messages.tryEmit("""{"type":"page","focused":$focused,"atBottom":$atBottom,"signature":$quoted,"video":"$video"}""")
         runCurrent()
     }
 
@@ -400,6 +400,81 @@ class PageHelperTest {
         advanceTimeBy(5_000)
         assertTrue(desktop.clicks.isEmpty())
         finish(controller)
+    }
+
+    @Test
+    fun `given a video playing at the bottom when it runs for a long time then it never clicks, and clicks after the video ends`() = runTest {
+        val controller = startedRun()
+        page(atBottom = true, video = "playing")
+        advanceTimeBy(600_000)
+        assertTrue(desktop.clicks.isEmpty())
+        assertEquals(ScrollClickPhase.WatchingVideo, controller.state.value.scrollClick?.phase)
+
+        page(atBottom = false)
+        advanceTimeBy(1_000)
+        assertEquals(ScrollClickPhase.Scrolling, controller.state.value.scrollClick?.phase)
+        assertTrue(desktop.clicks.isEmpty(), "It scrolls the rest of the way first")
+
+        page(atBottom = true)
+        advanceTimeBy(2_200)
+        assertEquals(listOf<ScreenPoint?>(SPOT), desktop.clicks)
+        finish(controller)
+    }
+
+    @Test
+    fun `given a video the browser won't start when waiting then it asks for play and doesn't click`() = runTest {
+        val controller = startedRun()
+        page(atBottom = true, video = "needsPlay")
+        advanceTimeBy(60_000)
+        assertTrue(desktop.clicks.isEmpty())
+        assertEquals(ScrollClickPhase.VideoNeedsPlay, controller.state.value.scrollClick?.phase)
+        finish(controller)
+    }
+
+    @Test
+    fun `given a video after a click when the page looks the same then it counts as changed`() = runTest {
+        val controller = startedRun(rounds = 2)
+        page(atBottom = true, signature = "same")
+        advanceTimeBy(2_200)
+        page(atBottom = true, signature = "same", video = "playing")
+        advanceTimeBy(60_000)
+        assertNull(history.added.firstOrNull())
+        assertEquals(ScrollClickPhase.WatchingVideo, controller.state.value.scrollClick?.phase)
+        finish(controller)
+    }
+
+    @Test
+    fun `given a video playing when the pointer moves to use the player then the run goes on`() = runTest {
+        val controller = startedRun()
+        page(atBottom = true, signature = "one")
+        advanceTimeBy(2_200)
+        page(atBottom = false, signature = null, video = "playing")
+        advanceTimeBy(200)
+        desktop.position = ScreenPoint(SPOT.x + 50, SPOT.y)
+        advanceTimeBy(5_000)
+        assertEquals(ScrollClickPhase.WatchingVideo, controller.state.value.scrollClick?.phase)
+        finish(controller)
+    }
+
+    @Test
+    fun `given a video playing when the stop key is used then the run still stops`() = runTest {
+        val controller = startedRun()
+        page(atBottom = false, video = "playing")
+        advanceTimeBy(1_000)
+        press(HotKey.F9)
+        runCurrent()
+        assertNull(controller.state.value.scrollClick)
+        assertEquals(RunOutcome.StoppedByUser, history.added.single().outcome)
+    }
+
+    @Test
+    fun `given the video setting when changed then the extension is told and it's saved`() = runTest {
+        val controller = controller()
+        assertTrue(lastCommand().watchVideos)
+        controller.setWatchVideos(false)
+        runCurrent()
+        assertFalse(lastCommand().watchVideos)
+        assertFalse(json.decodeFromString(PageHelperSettings.serializer(), store.data.first()).watchVideos)
     }
 
     @Test
