@@ -1,6 +1,7 @@
 package com.jagdeep.pagehelper.domain
 
 import com.jagdeep.automation.DesktopAutomation
+import com.jagdeep.automation.ForegroundApps
 import com.jagdeep.automation.HotKey
 import com.jagdeep.automation.HotKeyMonitor
 import com.jagdeep.automation.InputAccess
@@ -60,6 +61,14 @@ class PageHelperTest {
         var position: ScreenPoint? = ScreenPoint(100, 100)
         var corners = emptySet<ScreenPoint>()
         val clicks = mutableListOf<ScreenPoint?>()
+        val broughtForward = mutableListOf<String>()
+        override val apps = object : ForegroundApps {
+            override fun frontmost(): String? = null
+            override fun running(): List<String> = emptyList()
+            override fun bringToFront(name: String) {
+                broughtForward += name
+            }
+        }
         override val pointer = object : PointerDevice {
             override fun position() = this@FakeDesktop.position
             override fun click(at: ScreenPoint?, button: PointerButton, count: Int): Boolean {
@@ -399,6 +408,20 @@ class PageHelperTest {
         page(atBottom = true, focused = false)
         advanceTimeBy(5_000)
         assertTrue(desktop.clicks.isEmpty())
+        finish(controller)
+    }
+
+    @Test
+    fun `given a run starts when no page has reported then Chrome is brought forward and the status says it's reading the page`() = runTest {
+        val controller = startedRun()
+        advanceTimeBy(1_000)
+        assertEquals(listOf(BROWSER_APP_NAME), desktop.broughtForward)
+        assertEquals(ScrollClickPhase.ReadingPage, controller.state.value.scrollClick?.phase)
+        assertTrue(desktop.clicks.isEmpty())
+
+        page(atBottom = false, focused = false)
+        advanceTimeBy(100)
+        assertEquals(ScrollClickPhase.WaitingForChrome, controller.state.value.scrollClick?.phase)
         finish(controller)
     }
 

@@ -17,9 +17,11 @@ actual fun createDesktopAutomation(): DesktopAutomation {
 /** The parts that differ by operating system; everything else goes through AWT. */
 internal interface NativeInput : InputAccessGate, ForegroundApps {
     fun isKeyDown(key: HotKey): Boolean
+
+    fun setDisplayAwake(awake: Boolean)
 }
 
-private class JvmDesktopAutomation(native: NativeInput) : DesktopAutomation {
+private class JvmDesktopAutomation(private val native: NativeInput) : DesktopAutomation {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override val pointer: PointerDevice = AwtPointerDevice()
@@ -31,5 +33,10 @@ private class JvmDesktopAutomation(native: NativeInput) : DesktopAutomation {
         runCatching { java.awt.Toolkit.getDefaultToolkit().beep() }
     }
 
-    override fun close() = scope.cancel()
+    override fun setDisplayAwake(awake: Boolean) = native.setDisplayAwake(awake)
+
+    override fun close() {
+        native.setDisplayAwake(false)
+        scope.cancel()
+    }
 }

@@ -54,6 +54,7 @@ const val MIN_SCROLL_CLICK_ROUNDS = 1
 const val MAX_SCROLL_CLICK_ROUNDS = 9_999
 const val DEFAULT_SCROLL_CLICK_ROUNDS = 20
 internal const val SCROLL_CLICK_RUN_NAME = "Scroll and click"
+internal const val BROWSER_APP_NAME = "Google Chrome"
 
 data class PageHelperState(
     val isSupported: Boolean = true,
@@ -196,7 +197,7 @@ class PageHelperController(
         // Set before launching, so a second press can never start a second run.
         mutableState.update {
             it.copy(
-                scrollClick = ScrollClickProgress(1, rounds, 0, ScrollClickPhase.WaitingForChrome),
+                scrollClick = ScrollClickProgress(1, rounds, 0, ScrollClickPhase.ReadingPage),
                 scrollClickNote = null,
                 isPickingPoint = false,
                 isScrolling = true,
@@ -222,6 +223,8 @@ class PageHelperController(
         var outcome = RunOutcome.StoppedByUser
         val prefs = currentPreferences.value
         try {
+            // Start is pressed in this app, and nothing is clicked until Chrome is in front.
+            automation.apps.bringToFront(BROWSER_APP_NAME)
             outcome = scrollClickRun.execute(
                 point = point,
                 rounds = rounds,

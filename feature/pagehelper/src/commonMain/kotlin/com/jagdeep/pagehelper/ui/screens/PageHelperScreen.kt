@@ -178,6 +178,7 @@ private fun StatusPanel(state: PageHelperUiState, viewModel: PageHelperViewModel
 }
 
 private fun scrollClickDetail(run: ScrollClickProgress): String = when (run.phase) {
+    ScrollClickPhase.ReadingPage -> "Reading the page. If this stays, refresh the page in Chrome."
     ScrollClickPhase.WaitingForChrome -> "Bring Chrome to the front to continue. Clicks so far: ${run.clicks}."
     ScrollClickPhase.Scrolling -> "Scrolling to the bottom. Clicks so far: ${run.clicks}."
     ScrollClickPhase.WatchingVideo -> "Playing a video. It carries on when the video ends. Clicks so far: ${run.clicks}."
@@ -193,7 +194,7 @@ private fun ScrollClickSection(state: PageHelperUiState, viewModel: PageHelperVi
     val point = helper.settings.clickPoint
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            "Scrolls to the bottom of the page, clicks the spot you pick, then does it again. It clicks with no key press, and only while Chrome is in front.",
+            "Scrolls to the bottom of the page, clicks the spot you pick, then does it again. It clicks with no key press, and only while Chrome is in front, so leave Chrome in front once it starts.",
             style = MaterialTheme.typography.bodyMedium,
             color = colors.onSurfaceVariant,
         )
@@ -217,7 +218,7 @@ private fun ScrollClickSection(state: PageHelperUiState, viewModel: PageHelperVi
             Column(Modifier.weight(1f)) {
                 Text("Stop for videos", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "Plays each video it reaches and carries on when it ends.",
+                    "Plays each video it reaches, pressing its play button if it has one, and carries on when it ends.",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant,
                 )

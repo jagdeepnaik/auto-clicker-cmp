@@ -35,6 +35,18 @@ class SettingsViewModelTest {
 
     private val store = InMemoryPreferencesStore(AppPreferences())
 
+    @Test
+    fun `given the display setting when changed then it's off by default and saved`() = test {
+        val viewModel = SettingsViewModel(store, FakeGate())
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.preferences.keepDisplayOn)
+
+        viewModel.updateKeepDisplayOn(true)
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.preferences.keepDisplayOn)
+        assertTrue(store.data.first().keepDisplayOn)
+    }
+
     private fun test(block: suspend TestScope.() -> Unit) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {

@@ -24,6 +24,8 @@ internal class CachedForegroundApps(
 
     override fun running(): List<String> = source.running()
 
+    override fun bringToFront(name: String) = source.bringToFront(name)
+
     private companion object {
         val MAX_AGE = 250.milliseconds
     }

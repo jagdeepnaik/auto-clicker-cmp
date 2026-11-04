@@ -12,6 +12,7 @@ Built with Kotlin Multiplatform and Compose Multiplatform. macOS and Windows com
 - **Stop conditions:** when you stop it, after a number of clicks, or after some time.
 - **Only in one app:** pause automatically unless a chosen app, such as Google Chrome, is in front.
 - **Activity:** what ran, how many clicks it made, and why it stopped.
+- **Keep the display on:** an optional Settings switch that stops the display sleeping while something is running.
 
 ## Page helper (Chrome)
 
@@ -26,11 +27,13 @@ For pages you're working through yourself, in your normal Chrome profile. It rem
 
 For long feeds, "load more" lists and paged documents, the helper can also run by itself: it scrolls to the bottom, clicks a spot you picked, waits for the page to change, and repeats. This is the one mode that clicks with no key press, and it's off until you start it.
 
-With **Stop for videos** on, it stops at each video it reaches and plays it so you can watch, at the speed the page set. When the video ends, it scrolls the rest of the way and clicks. If Chrome won't start a video by itself, or you pause one, it waits for you to press play. Looping and silent autoplaying videos are skipped, and it can't see players that don't use a standard video element.
+With **Stop for videos** on, it stops at each video it reaches and plays it so you can watch, at the speed the page set, pressing the video's play button if it has one. When the video ends, it scrolls the rest of the way and clicks. If Chrome won't start a video by itself, or you pause one, it waits for you to press play. Looping and silent autoplaying videos are skipped, and it can't see players that don't use a standard video element.
 
 1. Turn on the page helper and press **Pick on screen**, then hold the pointer over the spot in Chrome and press **F7**.
 2. Set the number of rounds and press **Start scroll and click**.
-3. Bring Chrome to the front. It waits until you do, and pauses whenever another app is in front.
+3. Chrome comes to the front by itself on a Mac; on Windows, click it yourself. Clicking pauses whenever another app is in front, so leave Chrome there.
+
+After adding or reloading the extension, refresh any page that's already open.
 
 It stops after the last round, or if a click leaves the page unchanged for 15 seconds. The usual stops below also work, and each run appears in Activity. The spot is a position on the screen, so keep the Chrome window where it was when you picked it.
 
@@ -121,4 +124,4 @@ feature/shared     Contracts shared by more than one feature
 iosApp/            iOS entry point (Xcode project)
 ```
 
-Features depend only on core modules and `feature:shared`, never on each other. Coding and architecture conventions are in [AGENTS.md](./AGENTS.md).
+Features depend only on core modules and `feature:shared`, never on each other. [How it works](private/docs/HOW_IT_WORKS.md) explains every step, including how the app talks to Chrome. Coding and architecture conventions are in [AGENTS.md](./AGENTS.md).

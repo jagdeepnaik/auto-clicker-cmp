@@ -8,6 +8,8 @@ import com.jagdeep.shared.preferences.ThemeMode
 import com.jagdeep.ui.navigation.RouteTopLevel
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class AppWiringTest {
     @Test
@@ -26,10 +28,19 @@ class AppWiringTest {
             pageScrollHotKey = HotKey.F12,
             stopWhenPointerMoves = false,
             stopAtScreenCorner = false,
+            keepDisplayOn = true,
         )
         val stored = mutablePreferencesOf()
         writeAppPreferences(preferences, stored)
         assertEquals(preferences, readAppPreferences(stored))
+    }
+
+    @Test
+    fun `given the display setting when something runs then the display stays on, and otherwise it sleeps as usual`() {
+        assertTrue(shouldKeepDisplayAwake(enabled = true, routineActive = true, pageHelperActive = false))
+        assertTrue(shouldKeepDisplayAwake(enabled = true, routineActive = false, pageHelperActive = true))
+        assertFalse(shouldKeepDisplayAwake(enabled = true, routineActive = false, pageHelperActive = false), "Idle")
+        assertFalse(shouldKeepDisplayAwake(enabled = false, routineActive = true, pageHelperActive = true), "Setting off")
     }
 
     @Test

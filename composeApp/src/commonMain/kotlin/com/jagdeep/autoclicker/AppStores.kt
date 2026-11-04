@@ -28,6 +28,7 @@ private val PAGE_CLICK_HOT_KEY = stringPreferencesKey("page_click_hot_key")
 private val PAGE_SCROLL_HOT_KEY = stringPreferencesKey("page_scroll_hot_key")
 private val STOP_WHEN_POINTER_MOVES = booleanPreferencesKey("stop_when_pointer_moves")
 private val STOP_AT_SCREEN_CORNER = booleanPreferencesKey("stop_at_screen_corner")
+private val KEEP_DISPLAY_ON = booleanPreferencesKey("keep_display_on")
 internal val DOCUMENT_KEY = stringPreferencesKey("document")
 
 /** Absent or unknown values fall back to the model's defaults. */
@@ -42,6 +43,7 @@ internal fun readAppPreferences(stored: Preferences): AppPreferences {
         pageScrollHotKey = enumOrDefault<HotKey>(stored[PAGE_SCROLL_HOT_KEY], defaults.pageScrollHotKey),
         stopWhenPointerMoves = stored[STOP_WHEN_POINTER_MOVES] ?: defaults.stopWhenPointerMoves,
         stopAtScreenCorner = stored[STOP_AT_SCREEN_CORNER] ?: defaults.stopAtScreenCorner,
+        keepDisplayOn = stored[KEEP_DISPLAY_ON] ?: defaults.keepDisplayOn,
     )
 }
 
@@ -54,6 +56,7 @@ internal fun writeAppPreferences(value: AppPreferences, stored: MutablePreferenc
     stored[PAGE_SCROLL_HOT_KEY] = value.pageScrollHotKey.name
     stored[STOP_WHEN_POINTER_MOVES] = value.stopWhenPointerMoves
     stored[STOP_AT_SCREEN_CORNER] = value.stopAtScreenCorner
+    stored[KEEP_DISPLAY_ON] = value.keepDisplayOn
 }
 
 private inline fun <reified T : Enum<T>> enumOrDefault(name: String?, default: T): T =

@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit
 /** macOS: Accessibility decides whether input reaches other apps; Robot fails silently without it. */
 internal class MacNativeInput : NativeInput {
     private var promptShown = false
+    private var displayAwake: Process? = null
 
     override fun access(): InputAccess =
         if (runCatching { ApplicationServices.INSTANCE.AXIsProcessTrusted().toInt() != 0 }.getOrDefault(false)) {
@@ -37,6 +38,23 @@ internal class MacNativeInput : NativeInput {
 
     override fun running(): List<String> =
         parseVisibleProcessList(run(listOf(LSAPPINFO, "visibleProcessList")).orEmpty())
+
+    override fun bringToFront(name: String) {
+        run(listOf("/usr/bin/open", "-a", name))
+    }
+
+    /** -w ends caffeinate when this process does, so a crash can't leave the display awake. */
+    @Synchronized
+    override fun setDisplayAwake(awake: Boolean) {
+        if (!awake) {
+            displayAwake?.destroy()
+            displayAwake = null
+        } else if (displayAwake?.isAlive != true) {
+            displayAwake = runCatching {
+                ProcessBuilder(CAFFEINATE, "-d", "-w", ProcessHandle.current().pid().toString()).start()
+            }.onFailure { Log.w("Couldn't keep the display on: ${it.message}", TAG) }.getOrNull()
+        }
+    }
 
     private fun showAccessibilityPrompt() {
         val services = NativeLibrary.getInstance("ApplicationServices")
@@ -100,6 +118,7 @@ internal class MacNativeInput : NativeInput {
     private companion object {
         const val TAG = "MacNativeInput"
         const val LSAPPINFO = "/usr/bin/lsappinfo"
+        const val CAFFEINATE = "/usr/bin/caffeinate"
         const val COMMAND_TIMEOUT_SECONDS = 2L
 
         /** kCGEventSourceStateCombinedSessionState: keys pressed in the user's session, from any source. */

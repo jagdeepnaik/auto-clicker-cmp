@@ -19,6 +19,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+
+/** The display stays on only when the user asked for that and something is running. */
+internal fun shouldKeepDisplayAwake(enabled: Boolean, routineActive: Boolean, pageHelperActive: Boolean): Boolean =
+    enabled && (routineActive || pageHelperActive)
 
 /**
  * Process-scoped services: created once, independent of any screen, so the hot keys and a running
@@ -56,6 +63,19 @@ internal class AppServices private constructor() {
         newId = ::newId,
         stopOtherRun = pageHelper::stopScrollClick,
     )
+
+    init {
+        // Launched last: every service it reads exists by now.
+        scope.launch {
+            combine(preferences.data, controller.state, pageHelper.state) { prefs, run, helper ->
+                shouldKeepDisplayAwake(
+                    enabled = prefs.keepDisplayOn,
+                    routineActive = run != RunState.Idle,
+                    pageHelperActive = helper.isScrolling || helper.scrollClick != null,
+                )
+            }.distinctUntilChanged().collect(automation::setDisplayAwake)
+        }
+    }
 
     private fun close() {
         // A run interrupted here is recorded on a best-effort basis: the process is exiting.

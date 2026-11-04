@@ -29,7 +29,7 @@ internal data class PageReading(
     val video: PageVideo = PageVideo.None,
 )
 
-enum class ScrollClickPhase { WaitingForChrome, Scrolling, WatchingVideo, VideoNeedsPlay, AtBottom, WaitingForPage }
+enum class ScrollClickPhase { ReadingPage, WaitingForChrome, Scrolling, WatchingVideo, VideoNeedsPlay, AtBottom, WaitingForPage }
 
 data class ScrollClickProgress(val round: Int, val rounds: Int, val clicks: Long, val phase: ScrollClickPhase)
 
@@ -80,7 +80,7 @@ internal class ScrollClickRun(
                 when {
                     page == null -> {
                         heldMillis = 0
-                        report(ScrollClickPhase.WaitingForChrome)
+                        report(ScrollClickPhase.ReadingPage)
                     }
                     page.video != PageVideo.None -> {
                         // However long it runs. The user may well use the pointer on the player.

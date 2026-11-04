@@ -98,6 +98,30 @@ class LiveChromeExtensionTest {
         </body></html>
     """.trimIndent()
 
+    /** A picture and a button, as many players show: the video exists only once it's pressed. */
+    private val posterPage = """
+        <!doctype html><html><body style="height:5000px;margin:0">
+        <button class="vjs-pause-control" style="width:50px;height:50px" onclick="notifyTest('pause-pressed')"></button>
+        <div class="preview small big-play-button" style="width:300px;height:150px;background:#333" onclick="startPlayer(this)"></div>
+        <script>
+          const notifyTest = (what) => fetch('/report?what=' + what);
+          function startPlayer(button) {
+            notifyTest('play-pressed');
+            button.style.display = 'none';
+            const video = document.createElement('video');
+            video.style.cssText = 'width:300px;height:150px;display:block';
+            let paused = false, ended = false;
+            Object.defineProperty(video, 'paused', { get: () => paused });
+            Object.defineProperty(video, 'ended', { get: () => ended });
+            video.play = () => Promise.resolve();
+            document.body.prepend(video);
+            setTimeout(() => { paused = true; ended = true; notifyTest('video-ended'); }, 4000);
+          }
+        </script>
+        <script src="/stub.js"></script><script src="/background.js"></script><script src="/content.js"></script>
+        </body></html>
+    """.trimIndent()
+
     private fun waitFor(what: String, condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 30_000
         while (!condition()) {
@@ -116,31 +140,8 @@ class LiveChromeExtensionTest {
     private fun bundled(name: String) = javaClass.getResourceAsStream("/chrome-extension/$name")!!.bufferedReader().readText()
 
     @Test
-    fun `given a scroll and click run in Chrome when it reaches a video then it plays it, holds the page, and goes on only after it ends`() {
-        if (chrome == null) return
-        val reports = ConcurrentLinkedQueue<String>()
-        val linkPort = ServerSocket(0).use { it.localPort }
-        val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
-            createContext("/report") { exchange ->
-                reports += exchange.requestURI.query.substringAfter('=')
-                exchange.sendResponseHeaders(204, -1)
-                exchange.close()
-            }
-            createContext("/stub.js") { it.send("text/javascript", stub) }
-            createContext("/background.js") { it.send("text/javascript", bundled("background.js").replace("$BROWSER_LINK_PORT", "$linkPort")) }
-            createContext("/content.js") { it.send("text/javascript", bundled("content.js")) }
-            createContext("/") { it.send("text/html", videoPage) }
-            start()
-        }
-        val bridge = createLocalBridge(linkPort, "http://127.0.0.1:${server.address.port}")
-        val incoming = ConcurrentLinkedQueue<String>()
-        val scope = CoroutineScope(Dispatchers.Default)
-        scope.launch { bridge.incoming.collect { incoming += it } }
-        bridge.publish("""{"enabled":true,"scrolling":true,"pixelsPerSecond":2000,"words":[],"advance":0,"autoRun":true,"watchVideos":true}""")
-        val profile = Files.createTempDirectory("autoclicker-chrome").toFile()
-        val process = ProcessBuilder(chrome, "--headless=new", "--no-first-run", "--user-data-dir=${profile.absolutePath}", "http://127.0.0.1:${server.address.port}/")
-            .redirectErrorStream(true).redirectOutput(File(profile, "chrome.log")).start()
-        try {
+    fun `given a scroll and click run in Chrome when it reaches a video then it plays it, holds the page, and goes on only after it ends`() =
+        videoRun(videoPage) { reports, incoming ->
             waitFor("the video to start") { "main-play" in reports }
             waitFor("the app to hear it's playing") { incoming.any { "\"video\":\"playing\"" in it } }
             Thread.sleep(1_500)
@@ -154,6 +155,48 @@ class LiveChromeExtensionTest {
             waitFor("the bottom after the video") { incoming.any { "\"atBottom\":true" in it && "\"video\":\"none\"" in it } }
             assertEquals(1, reports.count { it == "main-play" }, "It plays a video once")
             assertFalse("deco-play" in reports, "A looping video is decoration")
+        }
+
+    @Test
+    fun `given a picture with a play button in Chrome when the run reaches it then it presses it once and waits for the video`() =
+        videoRun(posterPage) { reports, incoming ->
+            waitFor("the play button to be pressed") { "play-pressed" in reports }
+            Thread.sleep(1_500)
+            assertFalse("video-ended" in reports, "Still playing")
+            assertFalse(incoming.any { "\"atBottom\":true" in it && "\"video\":\"none\"" in it }, "It must wait for the video")
+
+            waitFor("the video to end") { "video-ended" in reports }
+            waitFor("the bottom after the video") { incoming.any { "\"atBottom\":true" in it && "\"video\":\"none\"" in it } }
+            assertEquals(1, reports.count { it == "play-pressed" }, "It presses a play button once")
+            assertFalse("pause-pressed" in reports, "A pause button isn't a play button")
+        }
+
+    private fun videoRun(page: String, checks: (ConcurrentLinkedQueue<String>, ConcurrentLinkedQueue<String>) -> Unit) {
+        if (chrome == null) return
+        val reports = ConcurrentLinkedQueue<String>()
+        val linkPort = ServerSocket(0).use { it.localPort }
+        val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
+            createContext("/report") { exchange ->
+                reports += exchange.requestURI.query.substringAfter('=')
+                exchange.sendResponseHeaders(204, -1)
+                exchange.close()
+            }
+            createContext("/stub.js") { it.send("text/javascript", stub) }
+            createContext("/background.js") { it.send("text/javascript", bundled("background.js").replace("$BROWSER_LINK_PORT", "$linkPort")) }
+            createContext("/content.js") { it.send("text/javascript", bundled("content.js")) }
+            createContext("/") { it.send("text/html", page) }
+            start()
+        }
+        val bridge = createLocalBridge(linkPort, "http://127.0.0.1:${server.address.port}")
+        val incoming = ConcurrentLinkedQueue<String>()
+        val scope = CoroutineScope(Dispatchers.Default)
+        scope.launch { bridge.incoming.collect { incoming += it } }
+        bridge.publish("""{"enabled":true,"scrolling":true,"pixelsPerSecond":2000,"words":[],"advance":0,"autoRun":true,"watchVideos":true}""")
+        val profile = Files.createTempDirectory("autoclicker-chrome").toFile()
+        val process = ProcessBuilder(chrome, "--headless=new", "--no-first-run", "--user-data-dir=${profile.absolutePath}", "http://127.0.0.1:${server.address.port}/")
+            .redirectErrorStream(true).redirectOutput(File(profile, "chrome.log")).start()
+        try {
+            checks(reports, incoming)
         } finally {
             process.destroyForcibly().waitFor()
             scope.cancel()

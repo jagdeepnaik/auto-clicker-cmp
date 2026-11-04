@@ -52,6 +52,8 @@ class SettingsViewModel(
 
     fun updateStopAtScreenCorner(enabled: Boolean) = save(state.value.preferences.copy(stopAtScreenCorner = enabled))
 
+    fun updateKeepDisplayOn(enabled: Boolean) = save(state.value.preferences.copy(keepDisplayOn = enabled))
+
     /** One key can't do two jobs, so a clash keeps the saved choice and says why. */
     fun updateToggleHotKey(key: HotKey) = assignKey(key, HotKeyJob.Toggle) { copy(toggleHotKey = key) }
 

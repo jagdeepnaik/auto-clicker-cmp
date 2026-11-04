@@ -42,6 +42,15 @@ class SettingsScreenUiTest {
     }
 
     @Test
+    fun `given the display switch when clicked then the choice is saved`() = runDesktopComposeUiTest(1000, 1400) {
+        val store = InMemoryPreferencesStore(AppPreferences())
+        val viewModel = SettingsViewModel(store, gate)
+        setContent { AppTheme(darkTheme = false) { SettingsScreen(viewModel, onBack = {}, appVersion = "1.0.0") } }
+        onNodeWithText("Keep the display on while running").performClick()
+        waitUntil(timeoutMillis = 5_000) { runBlocking { store.data.first().keepDisplayOn } }
+    }
+
+    @Test
     fun `given missing access when shown then the permission row offers the way to allow it`() = runDesktopComposeUiTest(1000, 1200) {
         gate.current = InputAccess.NeedsPermission
         val viewModel = SettingsViewModel(InMemoryPreferencesStore(AppPreferences()), gate)

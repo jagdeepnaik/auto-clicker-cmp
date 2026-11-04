@@ -58,6 +58,9 @@ interface ForegroundApps {
 
     /** Names of the apps with a visible window, for choosing a target. */
     fun running(): List<String>
+
+    /** Brings the named app forward when the platform allows it; otherwise does nothing. */
+    fun bringToFront(name: String) = Unit
 }
 
 /** Everything needed to drive other desktop apps. Close it when the process shuts down. */
@@ -69,6 +72,9 @@ interface DesktopAutomation {
 
     /** Plays the system alert sound, heard even while another app is in front. */
     fun playAlert() = Unit
+
+    /** Stops the display sleeping while [awake], where the platform allows it. Safe to repeat. */
+    fun setDisplayAwake(awake: Boolean) = Unit
 
     fun close()
 }

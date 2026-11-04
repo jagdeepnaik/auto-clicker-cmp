@@ -1,7 +1,9 @@
 // Runs in each frame. Finds the next-step button, highlights it, scrolls, and notices videos ending.
 // It clicks only when told to after a key press, and skips anything disabled.
 // During a scroll and click run it also reports whether the page has reached the bottom, and starts
-// each video it reaches. Videos play as the page set them: never faster, and never skipped ahead.
+// each video it reaches, pressing its play button if it has one. That's the only click a page gets
+// here without a key press, and only in a run the user started. Videos play as the page set them:
+// never faster, and never skipped ahead.
 (() => {
   if (window.__autoClickerHelper) return;
   window.__autoClickerHelper = true;
@@ -15,6 +17,13 @@
   // Older course pages often use links without an href, or plain elements with an onclick handler.
   const CLICKABLE = 'button, a, summary, [onclick], [role="button"], [role="link"], input[type="button"], input[type="submit"]';
 
+  // Many players show a picture and a button, and only create the video once it's pressed.
+  const PLAY_CONTROL_CANDIDATES = `${CLICKABLE}, [class*="play" i], [id*="play" i], [aria-label*="play" i], [title*="play" i]`;
+  const PLAY_CONTROL = /(^|[\s_-])play([\s_-]|$)|play[-_]?(button|btn|icon|overlay)/i;
+  const NOT_PLAY_CONTROL = /pause|playlist|\b(stop|next|prev|previous|again|all)\b/i;
+  const MIN_PLAY_CONTROL_PIXELS = 16;
+  const PLAY_CONTROL_WAIT_MILLIS = 8000;
+
   let settings = { enabled: false };
   let chosen = null;
   let savedOutline = null;
@@ -27,6 +36,8 @@
   const videosStarted = new WeakSet();
   const videosFinished = new WeakSet();
   const videosRefused = new WeakSet();
+  const pressedPlayControls = new WeakSet();
+  let playControlPressedAt = 0;
   const videoViewObserver = new IntersectionObserver((entries) => {
     for (const entry of entries) {
       if (!entry.isIntersecting) {
@@ -164,6 +175,33 @@
     });
   }
 
+  function isPlayControl(element) {
+    const text = [element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("class"), element.id, labelOf(element)]
+      .filter(Boolean).join(" ");
+    return PLAY_CONTROL.test(text) && !NOT_PLAY_CONTROL.test(text);
+  }
+
+  function isOnScreen(element) {
+    const box = element.getBoundingClientRect();
+    return box.width >= MIN_PLAY_CONTROL_PIXELS && box.height >= MIN_PLAY_CONTROL_PIXELS
+      && box.bottom > 0 && box.right > 0 && box.top < window.innerHeight && box.left < window.innerWidth;
+  }
+
+  // Each control is pressed once, so a video that has ended isn't started over.
+  function pressPlayControl(roots) {
+    for (const root of roots) {
+      for (const element of root.querySelectorAll(PLAY_CONTROL_CANDIDATES)) {
+        if (pressedPlayControls.has(element) || !isOnScreen(element) || !isUsable(element) || !isPlayControl(element)) continue;
+        pressedPlayControls.add(element);
+        playControlPressedAt = Date.now();
+        element.scrollIntoView({ block: "center" });
+        element.click();
+        return true;
+      }
+    }
+    return false;
+  }
+
   // "playing", "needsPlay" or "none". Once started, a pause is left alone: it's the viewer's choice.
   function checkVideos(roots) {
     if (!isWatchingVideos()) return "none";
@@ -183,7 +221,10 @@
         needsPlay = true;
       }
     }
-    return needsPlay ? "needsPlay" : "none";
+    if (needsPlay) return "needsPlay";
+    // Holds the page while the player loads. A control that starts nothing doesn't hold it for long.
+    if (Date.now() - playControlPressedAt < PLAY_CONTROL_WAIT_MILLIS) return "playing";
+    return pressPlayControl(roots) ? "playing" : "none";
   }
 
   function clearHighlight() {

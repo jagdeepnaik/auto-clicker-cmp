@@ -124,6 +124,14 @@ fun SettingsScreen(
             )
 
             if (state.access != InputAccess.Unsupported) {
+                Group("Display")
+                SwitchRow(
+                    title = "Keep the display on while running",
+                    supporting = "Stops the display sleeping during a routine, auto-scroll or scroll and click. It sleeps as usual afterwards.",
+                    checked = preferences.keepDisplayOn,
+                    onChange = viewModel::updateKeepDisplayOn,
+                )
+
                 Group("Permission")
                 ListItem(
                     colors = transparent(),

@@ -34,6 +34,8 @@ Started 2026-11-03. A desktop auto clicker for Chrome pages and other apps. macO
   chrome://extensions, iframes in a real extension, and the alert sound still need a person to try them.
 - Stop for videos (2026-11-03): Scroll and click stops at each video, plays it at the page's speed for the owner to
   watch, and goes on when it ends. It never changes speed or seeks, and never resumes a video that was paused.
+  It also presses a video's play button once (a scripted click), since many players create the video only then. That's
+  the only click the extension makes without a key press, and only in a run the user started with the switch on.
 - Scroll and click: logic covered by tests with fakes; the extension's bottom report checked in headless Chrome with
   stand-in `chrome.*` APIs. A real OS click on a real page through the loaded extension still needs a person to try it.
 - Android and iOS: the shell runs and explains it is desktop-only.
