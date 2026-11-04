@@ -35,6 +35,26 @@ internal class WindowsNativeInput : NativeInput {
         return names.toList()
     }
 
+    /**
+     * Windows lets the app in front hand over the front spot, which holds here because Start was
+     * just pressed in this app. Windows are listed front to back, so the most recent one is used.
+     */
+    override fun bringToFront(name: String) {
+        var target: HWND? = null
+        User32.INSTANCE.EnumWindows(WinUser.WNDENUMPROC { window, _ ->
+            val matches = User32.INSTANCE.IsWindowVisible(window) && User32.INSTANCE.GetWindowTextLength(window) > 0 &&
+                appNameOf(window)?.let { isExecutableOfApp(it, name) } == true
+            if (matches) target = window
+            !matches
+        }, null)
+        val window = target ?: return
+        // Only a minimized window is restored: restoring a maximized one would shrink it.
+        if (User32.INSTANCE.GetWindowLong(window, WinUser.GWL_STYLE) and WS_MINIMIZE != 0) {
+            User32.INSTANCE.ShowWindow(window, WinUser.SW_RESTORE)
+        }
+        User32.INSTANCE.SetForegroundWindow(window)
+    }
+
     /** Windows holds this request per thread, so one thread keeps it until told to let go. */
     @Synchronized
     override fun setDisplayAwake(awake: Boolean) {
@@ -74,8 +94,13 @@ internal class WindowsNativeInput : NativeInput {
         const val KEY_DOWN_BIT = 0x8000
         const val PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         const val MAX_PATH_CHARS = 1024
+        const val WS_MINIMIZE = 0x20000000
     }
 }
+
+/** `chrome` is the executable of the app called `Google Chrome`: its last word, in any case. */
+internal fun isExecutableOfApp(executable: String, appName: String): Boolean =
+    executable.equals(appName.trim().substringAfterLast(' '), ignoreCase = true)
 
 /** `C:\Program Files\Google\Chrome\Application\chrome.exe` is shown as `chrome`. */
 internal fun appNameFromExecutablePath(path: String): String? =

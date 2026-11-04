@@ -122,7 +122,7 @@ Everything goes through the small interfaces in `DesktopAutomation.kt`, so the r
 | `PointerDevice` | Read the position, click, detect corners and the app's own window | Java AWT `Robot` | Java AWT `Robot` |
 | `InputAccessGate` | Check and ask for permission | `AXIsProcessTrusted` (Accessibility) | Always granted |
 | `HotKeyMonitor` | Report key presses | `CGEventSourceKeyState`, polled | `GetAsyncKeyState`, polled |
-| `ForegroundApps` | Name the front app, list apps, bring an app forward | `lsappinfo`, `open -a` | Win32 calls; bringing forward does nothing |
+| `ForegroundApps` | Name the front app, list apps, bring an app forward | `lsappinfo`, `open -a` | Win32 calls, `SetForegroundWindow` |
 | `DesktopAutomation.setDisplayAwake` | Stop the display sleeping | `caffeinate -d` | `SetThreadExecutionState` |
 
 Linux, Android and iOS use `UnsupportedDesktopAutomation`, where every action reports that it did nothing.
@@ -392,7 +392,7 @@ This mode scrolls to the bottom, clicks the spot you picked, waits for the page 
 1. **Picking:** press **Pick on screen**, which sets `isPickingPoint`. The next F7 saves the pointer's position as `clickPoint`.
 2. **Checks:** `startScrollClick()` needs the helper on, the extension connected, a picked spot, no routine running, and permission. If something's missing, it shows the reason and doesn't start.
 3. **State:** it sets `scrollClick` and `isScrolling` *before* launching, so a second press can't start a second run, then publishes with `autoRun: true`.
-4. **Chrome comes forward:** on a Mac, `bringToFront("Google Chrome")` runs `open -a`.
+4. **Chrome comes forward:** `bringToFront("Google Chrome")` runs `open -a` on a Mac, and calls `SetForegroundWindow` on the most recent Chrome window on Windows.
 
 ### One round
 

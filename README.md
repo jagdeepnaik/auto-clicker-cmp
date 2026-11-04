@@ -31,7 +31,7 @@ With **Stop for videos** on, it stops at each video it reaches and plays it so y
 
 1. Turn on the page helper and press **Pick on screen**, then hold the pointer over the spot in Chrome and press **F7**.
 2. Set the number of rounds and press **Start scroll and click**.
-3. Chrome comes to the front by itself on a Mac; on Windows, click it yourself. Clicking pauses whenever another app is in front, so leave Chrome there.
+3. Chrome comes to the front by itself. Clicking pauses whenever another app is in front, so leave Chrome there.
 
 After adding or reloading the extension, refresh any page that's already open.
 

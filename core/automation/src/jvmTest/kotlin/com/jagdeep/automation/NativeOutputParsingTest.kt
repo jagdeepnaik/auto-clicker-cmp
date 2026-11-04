@@ -2,9 +2,19 @@ package com.jagdeep.automation
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class NativeOutputParsingTest {
+    @Test
+    fun `given a Windows executable when matched to an app name then Chrome matches and others don't`() {
+        assertTrue(isExecutableOfApp("chrome", "Google Chrome"))
+        assertTrue(isExecutableOfApp("CHROME", "Google Chrome"))
+        assertFalse(isExecutableOfApp("msedge", "Google Chrome"))
+        assertFalse(isExecutableOfApp("chromedriver", "Google Chrome"))
+    }
+
     @Test
     fun `given lsappinfo info output when parsed then the display name is returned`() {
         assertEquals("Google Chrome", parseLsAppInfoName("\"LSDisplayName\"=\"Google Chrome\"\n"))
