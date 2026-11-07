@@ -3,6 +3,8 @@ package com.jagdeep.home.data
 import com.jagdeep.home.domain.ClickPoint
 import com.jagdeep.home.domain.ClickRoutine
 import com.jagdeep.home.domain.ClickTarget
+import com.jagdeep.home.domain.PageHelperRoutine
+import com.jagdeep.home.domain.ScrollClickRoutine
 import com.jagdeep.home.domain.RunLimit
 import com.jagdeep.persistence.preferences.InMemoryPreferencesStore
 import kotlin.test.Test
@@ -72,6 +74,35 @@ class PreferencesRoutineRepositoryTest {
         repository.delete("routine-first")
         runCurrent()
         assertEquals(full, repository.library.value!!.selected)
+    }
+
+    @Test
+    fun `given every kind of routine when saved and read back then each keeps its kind and fields`() = runTest {
+        val store = InMemoryPreferencesStore("")
+        val scroll = ScrollClickRoutine("s", "Next pages", ClickPoint(640, 880), rounds = 7, pixelsPerSecond = 120, watchVideos = false)
+        val helper = PageHelperRoutine("h", "Course", words = listOf("Weiter"), soundOnVideoEnd = false)
+        repository(store).run {
+            save(full)
+            save(scroll)
+            save(helper)
+        }
+        runCurrent()
+        val reloaded = repository(store).library.value!!
+        assertEquals(listOf(full, scroll, helper), reloaded.routines.drop(1))
+    }
+
+    @Test
+    fun `given routines saved before there were kinds when read then they load as click routines`() = runTest {
+        val raw = """{"routines":[{"id":"old","name":"Saved last week","intervalMillis":500,"target":{"type":"points","points":[{"x":1,"y":2}]}}],"selectedId":"old"}"""
+        val routine = repository(InMemoryPreferencesStore(raw)).library.value!!.selected
+        assertEquals(ClickRoutine("old", "Saved last week", target = ClickTarget.AtPoints(listOf(ClickPoint(1, 2))), intervalMillis = 500), routine)
+    }
+
+    @Test
+    fun `given one routine that can't be read when loading then the others still load`() = runTest {
+        val raw = """{"routines":[{"type":"scrollClick","id":"broken","name":"No spot"},{"id":"ok","name":"Fine"}],"selectedId":"ok"}"""
+        val library = repository(InMemoryPreferencesStore(raw)).library.value!!
+        assertEquals(listOf("Fine"), library.routines.map { it.name })
     }
 
     @Test

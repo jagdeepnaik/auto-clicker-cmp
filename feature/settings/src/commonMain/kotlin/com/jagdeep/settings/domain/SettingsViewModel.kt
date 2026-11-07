@@ -13,6 +13,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -20,6 +21,8 @@ import kotlinx.coroutines.launch
 data class SettingsUiState(
     val preferences: AppPreferences = AppPreferences(),
     val access: InputAccess = InputAccess.Granted,
+    /** True while the Chrome extension is checking in. */
+    val browserConnected: Boolean = false,
 )
 
 private enum class HotKeyJob(val description: String, val keyIn: (AppPreferences) -> HotKey) {
@@ -32,6 +35,9 @@ private enum class HotKeyJob(val description: String, val keyIn: (AppPreferences
 class SettingsViewModel(
     private val preferencesStore: PreferencesStore<AppPreferences>,
     private val accessGate: InputAccessGate,
+    browserConnected: Flow<Boolean> = flowOf(false),
+    /** Puts the Chrome extension in a folder and shows it; returns a problem to explain, or null. */
+    private val installExtension: suspend () -> String? = { null },
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(SettingsUiState(access = accessGate.access()))
     val state = mutableState.asStateFlow()
@@ -42,6 +48,7 @@ class SettingsViewModel(
         viewModelScope.launch {
             preferencesStore.data.collect { preferences -> mutableState.update { it.copy(preferences = preferences) } }
         }
+        viewModelScope.launch { browserConnected.collect { connected -> mutableState.update { it.copy(browserConnected = connected) } } }
     }
 
     fun updateThemeMode(mode: ThemeMode) = save(state.value.preferences.copy(themeMode = mode))
@@ -51,6 +58,10 @@ class SettingsViewModel(
     fun updateStopWhenPointerMoves(enabled: Boolean) = save(state.value.preferences.copy(stopWhenPointerMoves = enabled))
 
     fun updateStopAtScreenCorner(enabled: Boolean) = save(state.value.preferences.copy(stopAtScreenCorner = enabled))
+
+    fun showExtension() {
+        viewModelScope.launch { installExtension()?.let { mutableMessages.send(it) } }
+    }
 
     fun updateKeepDisplayOn(enabled: Boolean) = save(state.value.preferences.copy(keepDisplayOn = enabled))
 

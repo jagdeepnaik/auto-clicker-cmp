@@ -35,7 +35,8 @@ sealed interface RunState {
 }
 
 /**
- * Starts and stops routines for the whole app. It is process-scoped, not tied to a screen, because
+ * Starts and stops routines of every kind for the whole app, one at a time. It runs click routines
+ * itself and hands Chrome routines to [page]. It is process-scoped, not tied to a screen, because
  * the stop hot key has to keep working from any tab and from any other app.
  */
 class ClickController(
@@ -47,8 +48,8 @@ class ClickController(
     private val now: () -> Long,
     private val newId: () -> String,
     random: Random = Random.Default,
-    /** Stops any other source of clicks; returns true when there was one running. */
-    private val stopOtherRun: () -> Boolean = { false },
+    /** Runs the Chrome routines, so that only one routine of any kind runs at a time. */
+    val page: PageRunner = NoPageRunner,
 ) {
     private val run = ClickRun(automation.pointer, automation.apps, automation.access, now, random)
     private val currentPreferences: StateFlow<AppPreferences> = preferences.stateIn(scope, SharingStarted.Eagerly, AppPreferences())
@@ -93,10 +94,12 @@ class ClickController(
     fun runningApps(): List<String> = automation.apps.running()
 
     /** Stops whatever is happening, or starts the selected routine. */
+    /** True while any routine runs, of any kind. */
+    val isActive: Boolean get() = state.value != RunState.Idle || page.isActive
+
     fun toggle() {
-        // This key stops everything: it never stops one run and starts a routine in the same press.
-        if (stopOtherRun()) return
-        if (state.value != RunState.Idle) {
+        // This key stops everything: it never stops one routine and starts another in the same press.
+        if (isActive) {
             stop()
             return
         }
@@ -104,8 +107,13 @@ class ClickController(
         if (routine == null) mutableMessages.tryEmit("Create a routine first.") else start(routine)
     }
 
-    fun start(routine: ClickRoutine) {
-        if (state.value != RunState.Idle) return
+    /** Starts [routine] unless a routine is already running: only one runs at a time. */
+    fun start(routine: Routine) {
+        if (isActive) return
+        if (routine !is ClickRoutine) {
+            page.start(routine)?.let(mutableMessages::tryEmit)
+            return
+        }
         when (automation.access.access()) {
             InputAccess.Granted -> Unit
             InputAccess.NeedsPermission -> {
@@ -117,7 +125,6 @@ class ClickController(
                 return
             }
         }
-        stopOtherRun()
         // Set before launching, so a second press of the hot key can never start a second run.
         mutableState.value = RunState.CountingDown(routine, routine.startDelaySeconds)
         job = scope.launch { perform(routine) }.also { started ->
@@ -128,8 +135,10 @@ class ClickController(
         }
     }
 
+    /** Stops whatever routine is running. */
     fun stop() {
         job?.cancel()
+        page.stop()
     }
 
     private suspend fun perform(routine: ClickRoutine) {

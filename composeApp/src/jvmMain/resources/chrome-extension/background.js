@@ -85,11 +85,23 @@ function reportPage(page) {
   report({ type: "page", ...page });
 }
 
+function hash(text) {
+  let value = 0;
+  for (let i = 0; i < text.length; i++) value = (value * 31 + text.charCodeAt(i)) | 0;
+  return value;
+}
+
+// Every frame counts: a page can keep its content in an iframe while the top frame never changes.
+function pageSignature(tabId) {
+  const contents = frameEntries(tabId).filter((f) => f.content).sort((a, b) => a.frameId - b.frameId);
+  return String(hash(contents.map((f) => `${f.frameId}=${f.content}`).join("|")));
+}
+
 // Only the frame being scrolled speaks for the page; the top frame does when nothing scrolls.
-async function reportPageFrom(frameId, scroller, reading, video) {
+async function reportPageFrom(tabId, frameId, scroller, reading, video) {
   if (!reading || frameId !== (scroller ? scroller.frameId : 0)) return;
   const window = await chrome.windows.getLastFocused();
-  const page = { focused: window.focused, atBottom: reading.atBottom, signature: reading.signature, video };
+  const page = { focused: window.focused, atBottom: reading.atBottom, signature: pageSignature(tabId), video };
   if (JSON.stringify(page) !== JSON.stringify(lastPage)) reportPage(page);
 }
 
@@ -98,7 +110,7 @@ async function onTick(message, sender) {
   const frameId = sender.frameId ?? 0;
   const active = tabId !== undefined && tabId === (await activeTabId());
   if (!command || !command.enabled || !active) return { enabled: false };
-  frames.set(`${tabId}:${frameId}`, { tabId, frameId, rank: message.rank, label: message.label, area: message.area, video: message.video, at: Date.now() });
+  frames.set(`${tabId}:${frameId}`, { tabId, frameId, rank: message.rank, label: message.label, area: message.area, video: message.video, content: message.reading?.content, at: Date.now() });
   const selected = selectedFrame(tabId);
   const label = selected ? selected.label : null;
   if (label !== lastReported) {
@@ -107,7 +119,7 @@ async function onTick(message, sender) {
   }
   const scroller = scrollerFrame(tabId);
   const video = command.autoRun ? videoState(tabId) : "none";
-  if (command.autoRun) await reportPageFrom(frameId, scroller, message.reading, video);
+  if (command.autoRun) await reportPageFrom(tabId, frameId, scroller, message.reading, video);
   return {
     enabled: true,
     words: command.words,

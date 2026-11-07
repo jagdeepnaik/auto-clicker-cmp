@@ -6,11 +6,11 @@ import com.jagdeep.automation.createDesktopAutomation
 import com.jagdeep.common.time.AppClock
 import com.jagdeep.home.data.PreferencesRoutineRepository
 import com.jagdeep.home.domain.ClickController
+import com.jagdeep.home.domain.PageController
 import com.jagdeep.home.domain.RoutineRepository
 import com.jagdeep.home.domain.RunState
 import com.jagdeep.localbridge.LocalBridge
 import com.jagdeep.localbridge.createLocalBridge
-import com.jagdeep.pagehelper.domain.PageHelperController
 import com.jagdeep.persistence.preferences.PreferencesStore
 import com.jagdeep.shared.history.RunHistoryStore
 import com.jagdeep.shared.preferences.AppPreferences
@@ -40,19 +40,17 @@ internal class AppServices private constructor() {
     val routines: RoutineRepository = PreferencesRoutineRepository(createDocumentStore(ROUTINES_STORE), scope)
     val runHistory: RunHistoryStore = PreferencesRunHistoryStore(createDocumentStore(RUN_HISTORY_STORE))
     private val bridge: LocalBridge = createLocalBridge(BROWSER_LINK_PORT, BROWSER_EXTENSION_ORIGIN)
-    val pageHelper = PageHelperController(
+    val page = PageController(
         automation = automation,
         bridge = bridge,
-        store = createDocumentStore(PAGE_HELPER_STORE),
         preferences = preferences.data,
         scope = scope,
         history = runHistory,
         now = AppClock::nowMillis,
         newId = ::newId,
-        isOtherRunActive = { controller.state.value != RunState.Idle },
     )
 
-    // After the page helper, because its hot key also has to stop a page helper run.
+    // Runs every kind of routine, one at a time, handing Chrome routines to [page].
     val controller: ClickController = ClickController(
         automation = automation,
         repository = routines,
@@ -61,17 +59,17 @@ internal class AppServices private constructor() {
         scope = scope,
         now = AppClock::nowMillis,
         newId = ::newId,
-        stopOtherRun = pageHelper::stopScrollClick,
+        page = page,
     )
 
     init {
         // Launched last: every service it reads exists by now.
         scope.launch {
-            combine(preferences.data, controller.state, pageHelper.state) { prefs, run, helper ->
+            combine(preferences.data, controller.state, page.state) { prefs, run, chrome ->
                 shouldKeepDisplayAwake(
                     enabled = prefs.keepDisplayOn,
                     routineActive = run != RunState.Idle,
-                    pageHelperActive = helper.isScrolling || helper.scrollClick != null,
+                    pageHelperActive = chrome.activity != null,
                 )
             }.distinctUntilChanged().collect(automation::setDisplayAwake)
         }
@@ -88,7 +86,6 @@ internal class AppServices private constructor() {
     companion object {
         private const val ROUTINES_STORE = "routines"
         private const val RUN_HISTORY_STORE = "run_history"
-        private const val PAGE_HELPER_STORE = "page_helper"
         private var instance: AppServices? = null
 
         /** The process-wide services, created on first use (after platform start-up, e.g. Android's Application). */

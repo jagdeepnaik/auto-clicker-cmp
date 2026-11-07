@@ -9,7 +9,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdsClick
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -43,7 +42,7 @@ import kotlinx.coroutines.flow.map
 import org.jetbrains.compose.resources.painterResource
 
 /** Top-level destinations, in the order they appear in navigation. */
-internal val TOP_LEVEL_ROUTES: List<NavKey> = listOf(RouteTopLevel.Home, RouteTopLevel.Sync, RouteTopLevel.Activity, RouteTopLevel.Settings)
+internal val TOP_LEVEL_ROUTES: List<NavKey> = listOf(RouteTopLevel.Home, RouteTopLevel.Activity, RouteTopLevel.Settings)
 
 /** Application UI shell: hands the process-scoped [AppServices] to feature entry providers. */
 @Composable
@@ -56,9 +55,7 @@ fun App() {
     val topAppBar by topAppBarManager.collectAsState()
     val navigationItems = remember {
         linkedMapOf<NavKey, MainNavigationItem>(
-            RouteTopLevel.Home to MainNavigationItem("Clicker", Icons.Default.AdsClick),
-            // core:ui stays an exact template copy, so this tab reuses its spare Sync route.
-            RouteTopLevel.Sync to MainNavigationItem("Page helper", Icons.Default.TravelExplore),
+            RouteTopLevel.Home to MainNavigationItem("Routines", Icons.Default.AdsClick),
             RouteTopLevel.Activity to MainNavigationItem("Activity", Icons.Default.History),
             RouteTopLevel.Settings to MainNavigationItem("Settings", Icons.Default.Settings),
         )
@@ -98,7 +95,7 @@ fun App() {
                         preferencesStore = preferencesStore,
                         controller = services.controller,
                         routineRepository = services.routines,
-                        pageHelper = services.pageHelper,
+                        browserConnected = remember(services) { services.page.state.map { it.isConnected } },
                         runHistory = services.runHistory,
                         accessGate = services.automation.access,
                         appVersion = AppConfig.APP_VERSION_NAME,

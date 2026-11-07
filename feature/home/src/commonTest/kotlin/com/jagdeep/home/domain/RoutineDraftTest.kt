@@ -65,7 +65,7 @@ class RoutineDraftTest {
     fun `given leftover points when the pointer target is chosen then they don't block saving or get saved`() {
         val draft = valid.copy(targetMode = TargetMode.AtPointer, points = listOf(PointDraft("", "")))
         assertFalse(draft.validate().hasAny)
-        assertEquals(ClickTarget.AtPointer, draft.toRoutine("r").target)
+        assertEquals(ClickTarget.AtPointer, (draft.toRoutine("r") as ClickRoutine).target)
     }
 
     @Test
@@ -80,5 +80,28 @@ class RoutineDraftTest {
         assertNotNull(valid.copy(randomExtraMillis = "-1").validate().randomExtra)
         assertNotNull(valid.copy(startDelaySeconds = "61").validate().startDelay)
         assertTrue(valid.copy(startDelaySeconds = "0").validate().startDelay == null)
+    }
+
+    @Test
+    fun `given a scroll and click draft when checked then it needs a spot and rounds in range`() {
+        val draft = RoutineDraft(kind = RoutineKind.ScrollClick, name = "Pages")
+        assertEquals("Pick the spot to click.", draft.validate().points)
+        val picked = draft.copy(points = listOf(PointDraft("640", "880")), rounds = "0")
+        assertTrue(picked.validate().rounds != null)
+        assertFalse(picked.copy(rounds = "5").validate().hasAny)
+    }
+
+    @Test
+    fun `given a page helper draft with no words when checked then it says so`() {
+        val draft = RoutineDraft(kind = RoutineKind.PageHelper, name = "Course", words = " , ")
+        assertEquals("Add at least one word.", draft.validate().words)
+    }
+
+    @Test
+    fun `given Chrome routines when turned into drafts and back then nothing is lost`() {
+        val scroll = ScrollClickRoutine("s", "Pages", ClickPoint(640, 880), rounds = 7, pixelsPerSecond = 120, watchVideos = false)
+        val helper = PageHelperRoutine("h", "Course", words = listOf("Next", "Weiter"), pixelsPerSecond = 30, soundOnVideoEnd = false)
+        assertEquals(scroll, scroll.toDraft().toRoutine("s"))
+        assertEquals(helper, helper.toDraft().toRoutine("h"))
     }
 }

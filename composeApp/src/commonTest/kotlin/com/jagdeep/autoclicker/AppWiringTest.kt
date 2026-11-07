@@ -13,8 +13,8 @@ import kotlin.test.assertTrue
 
 class AppWiringTest {
     @Test
-    fun `given the app shell when listing destinations then the clicker comes first`() {
-        assertEquals(listOf(RouteTopLevel.Home, RouteTopLevel.Sync, RouteTopLevel.Activity, RouteTopLevel.Settings), TOP_LEVEL_ROUTES)
+    fun `given the app shell when listing destinations then routines come first`() {
+        assertEquals(listOf(RouteTopLevel.Home, RouteTopLevel.Activity, RouteTopLevel.Settings), TOP_LEVEL_ROUTES)
     }
 
     @Test

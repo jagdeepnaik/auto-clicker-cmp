@@ -60,7 +60,6 @@ kotlin {
             // Features
             implementation(project(":feature:activity"))
             implementation(project(":feature:home"))
-            implementation(project(":feature:pagehelper"))
             implementation(project(":feature:settings"))
             implementation(project(":feature:shared"))
         }

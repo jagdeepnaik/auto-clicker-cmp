@@ -122,6 +122,37 @@ class LiveChromeExtensionTest {
         </body></html>
     """.trimIndent()
 
+    private val clearBottom = "\"atBottom\":true"
+
+    private val shortPage = """
+        <!doctype html><html><body><p>Not much here.</p>
+        <script src="/stub.js"></script><script src="/background.js"></script><script src="/content.js"></script>
+        </body></html>
+    """.trimIndent()
+
+    /** Reports plenty to scroll, but snaps back every time. */
+    private val lockedPage = """
+        <!doctype html><html><body style="height:5000px;margin:0">
+        <script>addEventListener('scroll', () => scrollTo({ top: 0, behavior: 'instant' }));</script>
+        <script src="/stub.js"></script><script src="/background.js"></script><script src="/content.js"></script>
+        </body></html>
+    """.trimIndent()
+
+    /** The top frame never changes, while a second frame's content does, as with a course in an iframe. */
+    private val iframeContentPage = """
+        <!doctype html><html><body><p>The same frame around changing content.</p>
+        <script src="/stub.js"></script><script src="/background.js"></script><script src="/content.js"></script>
+        <script>
+          let content = 'first';
+          setInterval(() => {
+            const tick = { type: 'tick', rank: null, label: null, area: 0, video: 'none', reading: { atBottom: true, content } };
+            for (const l of listeners) l(tick, { tab: { id: 1 }, frameId: 7 }, () => {});
+          }, 300);
+          setTimeout(() => { content = 'second'; }, 4000);
+        </script>
+        </body></html>
+    """.trimIndent()
+
     private fun waitFor(what: String, condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 30_000
         while (!condition()) {
@@ -169,6 +200,29 @@ class LiveChromeExtensionTest {
             waitFor("the bottom after the video") { incoming.any { "\"atBottom\":true" in it && "\"video\":\"none\"" in it } }
             assertEquals(1, reports.count { it == "play-pressed" }, "It presses a play button once")
             assertFalse("pause-pressed" in reports, "A pause button isn't a play button")
+        }
+
+    @Test
+    fun `given a page with nothing to scroll in Chrome when a run starts then it counts as the bottom`() =
+        videoRun(shortPage) { _, incoming ->
+            waitFor("the bottom to be reported") { incoming.any { clearBottom in it && "\"video\":\"none\"" in it } }
+        }
+
+    @Test
+    fun `given a page that won't move in Chrome when a run keeps trying then it counts as the bottom`() =
+        videoRun(lockedPage) { _, incoming ->
+            waitFor("the page to be read") { incoming.any { "\"type\":\"page\"" in it } }
+            assertFalse(incoming.any { clearBottom in it }, "It should try to scroll first")
+            waitFor("the bottom to be reported") { incoming.any { clearBottom in it } }
+        }
+
+    @Test
+    fun `given content changing in another frame in Chrome when read then the page signature changes`() =
+        videoRun(iframeContentPage) { _, incoming ->
+            fun signatures() = incoming.filter { clearBottom in it }
+                .mapNotNull { Regex("\"signature\":\"([^\"]+)\"").find(it)?.groupValues?.get(1) }.toSet()
+            waitFor("a signature") { signatures().isNotEmpty() }
+            waitFor("the signature to change with the other frame") { signatures().size >= 2 }
         }
 
     private fun videoRun(page: String, checks: (ConcurrentLinkedQueue<String>, ConcurrentLinkedQueue<String>) -> Unit) {

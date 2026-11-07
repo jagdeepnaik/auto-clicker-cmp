@@ -142,12 +142,12 @@ If you open the project in an IDE, its sync may complain about the missing SDK. 
 
 ## 5. Set up Chrome
 
-1. In the app, open the **Page helper** tab and press **Show extension folder**. It opens `%USERPROFILE%\.autoclicker\chrome-extension`.
+1. In the app, open **Settings**, and under **Chrome extension** press **Show extension folder**. It opens `%USERPROFILE%\.autoclicker\chrome-extension`.
 2. In Chrome, open `chrome://extensions` and turn on **Developer mode**.
 3. Choose **Load unpacked** and select that folder.
 4. Refresh any page that's already open.
 
-When the extension is connected, the status in the Page helper tab stops saying "Waiting for Chrome".
+When the extension is connected, Settings shows **Connected to Chrome**.
 
 ## 6. Try it
 

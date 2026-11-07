@@ -69,7 +69,7 @@ internal class FakeRoutineRepository(initial: RoutineLibrary? = RoutineLibrary()
     private val mutable = MutableStateFlow(initial)
     override val library: StateFlow<RoutineLibrary?> = mutable
 
-    override suspend fun save(routine: ClickRoutine) {
+    override suspend fun save(routine: Routine) {
         val current = mutable.value ?: RoutineLibrary()
         mutable.value = current.copy(routines = current.routines.filterNot { it.id == routine.id } + routine, selectedId = routine.id)
     }
@@ -96,5 +96,37 @@ internal class FakeRunHistory : RunHistoryStore {
     override suspend fun clear() {
         added.clear()
         records.value = emptyList()
+    }
+}
+
+/** Stands in for Chrome: starts whatever it's given unless told to refuse. */
+internal class FakePageRunner : PageRunner {
+    override val state = MutableStateFlow(PageState(isConnected = true))
+    override val lastRun = MutableStateFlow<com.jagdeep.shared.history.RunRecord?>(null)
+    val started = mutableListOf<Routine>()
+    var refusal: String? = null
+    var stops = 0
+
+    override fun start(routine: Routine): String? {
+        refusal?.let { return it }
+        started += routine
+        val activity = when (routine) {
+            is PageHelperRoutine -> PageActivity.Helper(routine)
+            is ScrollClickRoutine -> PageActivity.ScrollClick(routine, ScrollClickProgress(1, routine.rounds, 0, ScrollClickPhase.ReadingPage))
+            is ClickRoutine -> return "not a page routine"
+        }
+        state.value = state.value.copy(activity = activity)
+        return null
+    }
+
+    override fun stop(): Boolean {
+        if (!isActive) return false
+        stops++
+        state.value = state.value.copy(activity = null, isScrolling = false)
+        return true
+    }
+
+    override fun toggleScrolling() {
+        state.value = state.value.copy(isScrolling = !state.value.isScrolling)
     }
 }

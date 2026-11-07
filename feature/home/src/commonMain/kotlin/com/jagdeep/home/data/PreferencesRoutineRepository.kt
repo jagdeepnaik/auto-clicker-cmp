@@ -1,6 +1,8 @@
 package com.jagdeep.home.data
 
+import com.jagdeep.home.domain.CLICK_ROUTINE_TYPE
 import com.jagdeep.home.domain.ClickRoutine
+import com.jagdeep.home.domain.Routine
 import com.jagdeep.home.domain.RoutineLibrary
 import com.jagdeep.home.domain.RoutineRepository
 import com.jagdeep.persistence.preferences.PreferencesStore
@@ -14,10 +16,15 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * Routines as one JSON document in an ordinary (non-sensitive) preference store: names, screen
- * positions and timings. Writes are serialised. A first launch starts with one ready-to-use routine.
+ * positions, timings and words. Writes are serialised. A first launch starts with one ready-to-use
+ * routine. A routine that can't be read is left out rather than losing the others.
  */
 class PreferencesRoutineRepository(
     private val store: PreferencesStore<String>,
@@ -29,7 +36,7 @@ class PreferencesRoutineRepository(
         .map { decode(it).toLibrary() }
         .stateIn(scope, SharingStarted.Eagerly, null)
 
-    override suspend fun save(routine: ClickRoutine) = update { data ->
+    override suspend fun save(routine: Routine) = update { data ->
         val replaced = data.routines.map { if (it.id == routine.id) routine else it }
         val routines = if (data.routines.any { it.id == routine.id }) replaced else data.routines + routine
         // A new or edited routine is the one the user wants to run next.
@@ -46,14 +53,23 @@ class PreferencesRoutineRepository(
         store.save(json.encodeToString(RoutineData.serializer(), change(decode(store.data.first()))))
     }
 
-    private fun decode(raw: String): RoutineData =
-        if (raw.isBlank()) firstLaunch() else runCatching { json.decodeFromString(RoutineData.serializer(), raw) }.getOrDefault(firstLaunch())
+    private fun decode(raw: String): RoutineData {
+        if (raw.isBlank()) return firstLaunch()
+        val root = runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return firstLaunch()
+        val routines = (root["routines"] as? JsonArray).orEmpty().mapNotNull { element ->
+            val saved = element as? JsonObject ?: return@mapNotNull null
+            // Routines saved before there were types are all click routines.
+            val typed = if (TYPE_KEY in saved) saved else JsonObject(saved + (TYPE_KEY to JsonPrimitive(CLICK_ROUTINE_TYPE)))
+            runCatching { json.decodeFromJsonElement(Routine.serializer(), typed) }.getOrNull()
+        }
+        return RoutineData(routines, (root["selectedId"] as? JsonPrimitive)?.contentOrNull)
+    }
 
     private fun firstLaunch() = RoutineData(routines = listOf(ClickRoutine(id = FIRST_ROUTINE_ID, name = "Click at the pointer")), selectedId = FIRST_ROUTINE_ID)
 
     @Serializable
     private data class RoutineData(
-        val routines: List<ClickRoutine> = emptyList(),
+        val routines: List<Routine> = emptyList(),
         val selectedId: String? = null,
     ) {
         fun toLibrary() = RoutineLibrary(routines, selectedId)
@@ -61,6 +77,7 @@ class PreferencesRoutineRepository(
 
     private companion object {
         const val FIRST_ROUTINE_ID = "routine-first"
+        const val TYPE_KEY = "type"
         val json = Json { ignoreUnknownKeys = true }
     }
 }

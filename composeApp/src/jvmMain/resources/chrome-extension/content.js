@@ -14,6 +14,11 @@
   const BOTTOM_TOLERANCE_PIXELS = 2;
   const MAX_HASHED_CHARACTERS = 200000;
   const VIDEO_END_TOLERANCE_SECONDS = 0.5;
+  // Some pages report more content than they let you scroll to, so no movement counts as the end.
+  const CANNOT_SCROLL_MILLIS = 3000;
+  const MAX_SCROLL_DRIFT_PIXELS = 50;
+  // A page that never finishes loading, such as one with a stuck iframe, mustn't hold a run forever.
+  const MAX_LOAD_WAIT_MILLIS = 15000;
   // Older course pages often use links without an href, or plain elements with an onclick handler.
   const CLICKABLE = 'button, a, summary, [onclick], [role="button"], [role="link"], input[type="button"], input[type="submit"]';
 
@@ -30,6 +35,11 @@
   let scroller = null;
   let lastFrameTime = null;
   let carry = 0;
+  let scrollTarget = 0;
+  let lastScrollTop = 0;
+  let lastMovedAt = 0;
+  let cannotScroll = false;
+  const startedAt = Date.now();
   const watchedVideos = new WeakSet();
   const videosInView = new WeakSet();
   const videosReached = new WeakSet();
@@ -125,15 +135,15 @@
     return value;
   }
 
-  // A page that's still loading never counts as the bottom. The signature is a set of hashes, so
-  // the app can tell the page changed without ever receiving its address or text.
+  // A page still loading doesn't count as the bottom, and nothing to scroll does. Content is a set
+  // of hashes, so the app can tell the page changed without receiving its address, text or images.
   function readPage() {
-    const loaded = document.readyState === "complete";
-    const atBottom = loaded && (!scroller || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - BOTTOM_TOLERANCE_PIXELS);
-    if (!atBottom) return { atBottom: false, signature: null };
-    const height = scroller ? scroller.scrollHeight : 0;
+    const loaded = document.readyState === "complete" || Date.now() - startedAt >= MAX_LOAD_WAIT_MILLIS;
+    const reachedEnd = !scroller || cannotScroll || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - BOTTOM_TOLERANCE_PIXELS;
     const text = document.body ? document.body.textContent : "";
-    return { atBottom: true, signature: `${hash(location.href)}:${height}:${text.length}:${hash(text)}` };
+    const images = [...document.images].map((image) => image.currentSrc).join();
+    const height = document.documentElement.scrollHeight;
+    return { atBottom: loaded && reachedEnd, content: `${hash(location.href)}:${height}:${text.length}:${hash(text)}:${hash(images)}` };
   }
 
   function watchVideos(roots) {
@@ -248,13 +258,30 @@
     if (!settings.enabled || !settings.scrolling || !scroller) {
       lastFrameTime = null;
       carry = 0;
+      cannotScroll = false;
       return;
     }
-    if (lastFrameTime !== null) {
+    if (lastFrameTime === null) {
+      scrollTarget = scroller.scrollTop;
+      lastScrollTop = scroller.scrollTop;
+      lastMovedAt = time;
+    } else {
+      // Checked before moving, so a page that snaps back doesn't look like it moved.
+      if (scroller.scrollTop !== lastScrollTop) {
+        lastScrollTop = scroller.scrollTop;
+        lastMovedAt = time;
+        cannotScroll = false;
+      } else if (time - lastMovedAt >= CANNOT_SCROLL_MILLIS) {
+        cannotScroll = true;
+      }
       carry += (settings.pixelsPerSecond * (time - lastFrameTime)) / 1000;
       const whole = Math.floor(carry);
       if (whole > 0) {
-        scroller.scrollTop += whole;
+        // A running target, because a browser zoom can round away a small step every time, and
+        // instant, because a page's smooth scrolling would restart on every step.
+        if (Math.abs(scrollTarget - scroller.scrollTop) > MAX_SCROLL_DRIFT_PIXELS) scrollTarget = scroller.scrollTop;
+        scrollTarget += whole;
+        scroller.scrollTo({ top: scrollTarget, behavior: "instant" });
         carry -= whole;
       }
     }

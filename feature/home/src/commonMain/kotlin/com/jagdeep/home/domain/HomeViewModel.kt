@@ -8,19 +8,29 @@ import com.jagdeep.shared.history.RunRecord
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class HomeUiState(
     val isLoading: Boolean = true,
-    val routines: List<ClickRoutine> = emptyList(),
-    val selected: ClickRoutine? = null,
+    val routines: List<Routine> = emptyList(),
+    val selected: Routine? = null,
     val run: RunState = RunState.Idle,
+    val page: PageState = PageState(),
     val lastRun: RunRecord? = null,
     val access: InputAccess = InputAccess.Granted,
     val toggleHotKey: HotKey = HotKey.F6,
-    val routinePendingDeletion: ClickRoutine? = null,
-)
+    val pageClickHotKey: HotKey = HotKey.F8,
+    val pageScrollHotKey: HotKey = HotKey.F9,
+    val routinePendingDeletion: Routine? = null,
+) {
+    /** True while any routine runs, of any kind. */
+    val isActive: Boolean get() = run != RunState.Idle || page.activity != null
+}
+
+/** A page helper only reads Chrome and clicks through the extension, so it needs no input permission. */
+fun Routine.needsInputAccess(): Boolean = this !is PageHelperRoutine
 
 class HomeViewModel(
     private val controller: ClickController,
@@ -38,8 +48,20 @@ class HomeViewModel(
             }
         }
         viewModelScope.launch { controller.state.collect { run -> mutableState.update { it.copy(run = run) } } }
-        viewModelScope.launch { controller.lastRun.collect { last -> mutableState.update { it.copy(lastRun = last) } } }
-        viewModelScope.launch { controller.preferences.collect { prefs -> mutableState.update { it.copy(toggleHotKey = prefs.toggleHotKey) } } }
+        viewModelScope.launch { controller.page.state.collect { page -> mutableState.update { it.copy(page = page) } } }
+        viewModelScope.launch {
+            // Whichever kind of routine finished most recently.
+            combine(controller.lastRun, controller.page.lastRun) { click, page ->
+                listOfNotNull(click, page).maxByOrNull { it.endedAtMillis }
+            }.collect { last -> mutableState.update { it.copy(lastRun = last) } }
+        }
+        viewModelScope.launch {
+            controller.preferences.collect { prefs ->
+                mutableState.update {
+                    it.copy(toggleHotKey = prefs.toggleHotKey, pageClickHotKey = prefs.pageClickHotKey, pageScrollHotKey = prefs.pageScrollHotKey)
+                }
+            }
+        }
         watchAccess()
     }
 
@@ -52,7 +74,9 @@ class HomeViewModel(
 
     fun stop() = controller.stop()
 
-    fun select(routine: ClickRoutine) {
+    fun toggleScrolling() = controller.page.toggleScrolling()
+
+    fun select(routine: Routine) {
         viewModelScope.launch { repository.select(routine.id) }
     }
 
@@ -60,7 +84,7 @@ class HomeViewModel(
         controller.requestAccess()
     }
 
-    fun requestDeletion(routine: ClickRoutine) = mutableState.update { it.copy(routinePendingDeletion = routine) }
+    fun requestDeletion(routine: Routine) = mutableState.update { it.copy(routinePendingDeletion = routine) }
 
     fun cancelDeletion() = mutableState.update { it.copy(routinePendingDeletion = null) }
 

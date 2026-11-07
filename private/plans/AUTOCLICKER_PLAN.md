@@ -19,7 +19,10 @@ Started 2026-11-03. A desktop auto clicker for Chrome pages and other apps. macO
 - Reaching the normal Chrome profile requires an extension (remote debugging can't). It ships inside the app in
   `composeApp/src/jvmMain/resources/chrome-extension`; the app controls it over `core:localbridge`. A fixed manifest
   key gives a fixed extension ID, and the link trusts only that Origin, so no pairing secret is stored.
-- The tab reuses `RouteTopLevel.Sync` because core:ui stays an exact copy.
+- Routines (2026-11-07, owner's request): one Routines page holds every kind of routine (click routine, scroll and
+  click, page helper), chosen with New routine, and only one runs at a time. Tabs are Routines, Activity, Settings; the
+  extension setup is in Settings. `feature:pagehelper` was merged into `feature:home` (`PageController`), so adding a
+  kind means a `Routine` subtype, a `RoutineKind`, an editor section and a runner. Old routines load as click routines.
 - Scroll and click (2026-11-03): scrolls to the bottom, clicks a picked screen position, repeats. Requested by the owner
   for uses other than the CBT course, which they confirmed it isn't for; the hands-on rule above still holds for that
   course. The extension still clicks only on a key press: it only reports position (focus, at bottom, a hash signature,

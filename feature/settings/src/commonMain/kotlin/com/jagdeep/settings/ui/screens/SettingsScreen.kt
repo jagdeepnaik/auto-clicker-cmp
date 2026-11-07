@@ -86,7 +86,7 @@ fun SettingsScreen(
             Group("Hot keys", first = true)
             HotKeyRow(
                 title = "Start and stop",
-                supporting = "Works in any app. On a Mac keyboard you may need to hold fn.",
+                supporting = "Starts the selected routine, or stops whichever is running. Works in any app; on a Mac keyboard you may need to hold fn.",
                 selected = preferences.toggleHotKey,
                 onSelect = viewModel::updateToggleHotKey,
             )
@@ -98,13 +98,13 @@ fun SettingsScreen(
             )
             HotKeyRow(
                 title = "Click the highlighted button",
-                supporting = "Page helper: clicks the button highlighted in Chrome.",
+                supporting = "Page helper routines: clicks the button highlighted in Chrome.",
                 selected = preferences.pageClickHotKey,
                 onSelect = viewModel::updatePageClickHotKey,
             )
             HotKeyRow(
                 title = "Auto-scroll",
-                supporting = "Page helper: starts or stops scrolling in Chrome.",
+                supporting = "Page helper routines: starts or stops scrolling. Scroll and click: stops it.",
                 selected = preferences.pageScrollHotKey,
                 onSelect = viewModel::updatePageScrollHotKey,
             )
@@ -124,10 +124,26 @@ fun SettingsScreen(
             )
 
             if (state.access != InputAccess.Unsupported) {
+                Group("Chrome extension")
+                ListItem(
+                    colors = transparent(),
+                    headlineContent = { Text(if (state.browserConnected) "Connected to Chrome" else "Not connected") },
+                    supportingContent = {
+                        Text("Needed for scroll and click and page helper routines. It talks only to this app on this computer.")
+                    },
+                )
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    Text("1. Press Show extension folder.", style = MaterialTheme.typography.bodyMedium)
+                    Text("2. In Chrome, open chrome://extensions and turn on Developer mode.", style = MaterialTheme.typography.bodyMedium)
+                    Text("3. Choose Load unpacked, then select the folder that opened.", style = MaterialTheme.typography.bodyMedium)
+                    Text("After an update, press reload there and refresh any open page.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = viewModel::showExtension) { Text("Show extension folder") }
+                }
+
                 Group("Display")
                 SwitchRow(
                     title = "Keep the display on while running",
-                    supporting = "Stops the display sleeping during a routine, auto-scroll or scroll and click. It sleeps as usual afterwards.",
+                    supporting = "Stops the display sleeping while a routine runs. It sleeps as usual afterwards.",
                     checked = preferences.keepDisplayOn,
                     onChange = viewModel::updateKeepDisplayOn,
                 )

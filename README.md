@@ -12,6 +12,7 @@ Built with Kotlin Multiplatform and Compose Multiplatform. macOS and Windows com
 - **Stop conditions:** when you stop it, after a number of clicks, or after some time.
 - **Only in one app:** pause automatically unless a chosen app, such as Google Chrome, is in front.
 - **Activity:** what ran, how many clicks it made, and why it stopped.
+- **One page for every routine:** the Routines page holds click routines, scroll and click routines and page helper routines. Choose the kind with **New routine**. Only one routine runs at a time.
 - **Keep the display on:** an optional Settings switch that stops the display sleeping while something is running.
 
 ## Page helper (Chrome)
@@ -29,15 +30,17 @@ For long feeds, "load more" lists and paged documents, the helper can also run b
 
 With **Stop for videos** on, it stops at each video it reaches and plays it so you can watch, at the speed the page set, pressing the video's play button if it has one. When the video ends, it scrolls the rest of the way and clicks. If Chrome won't start a video by itself, or you pause one, it waits for you to press play. Looping and silent autoplaying videos are skipped, and it can't see players that don't use a standard video element.
 
-1. Turn on the page helper and press **Pick on screen**, then hold the pointer over the spot in Chrome and press **F7**.
-2. Set the number of rounds and press **Start scroll and click**.
-3. Chrome comes to the front by itself. Clicking pauses whenever another app is in front, so leave Chrome there.
+1. On the Routines page, press **New routine** and choose **Scroll and click**.
+2. Press **Pick on screen**, hold the pointer over the spot in Chrome, and press **F7**. Set the number of rounds and save.
+3. Select the routine and press **Start**. Chrome comes to the front by itself. Clicking pauses whenever another app is in front, so leave Chrome there.
 
 After adding or reloading the extension, refresh any page that's already open.
 
 It stops after the last round, or if a click leaves the page unchanged for 15 seconds. The usual stops below also work, and each run appears in Activity. The spot is a position on the screen, so keep the Chrome window where it was when you picked it.
 
-Set it up once from the Page helper tab: press **Show extension folder**, open `chrome://extensions`, turn on Developer mode, choose **Load unpacked**, and select that folder. The extension talks only to the app on this computer.
+A **Page helper** routine highlights the next button while it runs; press **F8** to click it and **F9** to scroll.
+
+Set up the extension once from **Settings > Chrome extension**: press **Show extension folder**, open `chrome://extensions`, turn on Developer mode, choose **Load unpacked**, and select that folder. The extension talks only to the app on this computer.
 
 Some pages ignore scripted clicks, or use a player the helper can't read, such as a canvas. On those you click as usual.
 
@@ -116,8 +119,7 @@ core/persistence   Preference storage and Room (template)
 core/network       Template module, not used by this app
 core/notifications Template module, not used by this app
 core/transfer      Template module, not used by this app
-feature/home       Run panel, routines, routine editor, click engine
-feature/pagehelper Controls for the Chrome page helper
+feature/home       Routines page: every kind of routine, the editor, and their runners
 feature/activity   Run history
 feature/settings   Hot keys, safety, permission, appearance
 feature/shared     Contracts shared by more than one feature

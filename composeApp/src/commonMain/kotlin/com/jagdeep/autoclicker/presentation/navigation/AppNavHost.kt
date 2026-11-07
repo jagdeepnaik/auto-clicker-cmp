@@ -11,8 +11,6 @@ import com.jagdeep.home.domain.ClickController
 import com.jagdeep.home.domain.RoutineRepository
 import com.jagdeep.home.ui.navigation.homeEntryProvider
 import com.jagdeep.autoclicker.installBrowserExtension
-import com.jagdeep.pagehelper.domain.PageHelperController
-import com.jagdeep.pagehelper.ui.navigation.pageHelperEntryProvider
 import com.jagdeep.persistence.preferences.PreferencesStore
 import com.jagdeep.settings.ui.navigation.settingsEntryProvider
 import com.jagdeep.shared.history.RunHistoryStore
@@ -21,6 +19,7 @@ import com.jagdeep.ui.navigation.NavigationState
 import com.jagdeep.ui.navigation.Navigator
 import com.jagdeep.ui.navigation.TopLevelPager
 import com.jagdeep.ui.platform.isDesktopPlatform
+import kotlinx.coroutines.flow.Flow
 
 @Composable
 fun AppNavHost(
@@ -30,7 +29,7 @@ fun AppNavHost(
     preferencesStore: PreferencesStore<AppPreferences>,
     controller: ClickController,
     routineRepository: RoutineRepository,
-    pageHelper: PageHelperController,
+    browserConnected: Flow<Boolean>,
     runHistory: RunHistoryStore,
     accessGate: InputAccessGate,
     appVersion: String,
@@ -41,9 +40,8 @@ fun AppNavHost(
 ) {
     val stacks = navigationState.rememberDecoratedStacks(entryProvider {
         homeEntryProvider(navigator, controller, routineRepository, newId, appIcon)
-        pageHelperEntryProvider(navigator, pageHelper, onInstallExtension = ::installBrowserExtension)
         activityEntryProvider(navigator, runHistory, now)
-        settingsEntryProvider(navigator, preferencesStore, accessGate, appVersion)
+        settingsEntryProvider(navigator, preferencesStore, accessGate, appVersion, browserConnected, onInstallExtension = ::installBrowserExtension)
     })
     if (isDesktopPlatform()) {
         // Desktop navigates with the sidebar.

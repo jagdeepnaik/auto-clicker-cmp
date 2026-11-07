@@ -20,6 +20,7 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(project(":core:automation"))
             implementation(project(":core:common"))
+            implementation(project(":core:localbridge"))
             implementation(project(":core:logger"))
             implementation(project(":core:persistence"))
             implementation(project(":core:ui"))

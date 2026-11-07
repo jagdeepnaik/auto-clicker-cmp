@@ -32,23 +32,70 @@ class ClickControllerTest {
             .also { runCurrent() }
     }
 
+    private val helper = PageHelperRoutine("h", "Course pages")
+
+    private fun TestScope.controllerWithPage(page: FakePageRunner, selected: Routine = routine): ClickController {
+        val library = RoutineLibrary(listOf(routine, helper), selected.id)
+        return ClickController(automation, FakeRoutineRepository(library), preferences, history, backgroundScope, { currentTime }, { "run" }, page = page)
+            .also { runCurrent() }
+    }
+
     @Test
-    fun `given another run going when the hot key is pressed then it stops that run and starts nothing`() = runTest {
-        var otherRunning = true
-        val controller = ClickController(
-            automation, FakeRoutineRepository(RoutineLibrary(listOf(routine), "r")), preferences, history, backgroundScope, { currentTime }, { "run" },
-            stopOtherRun = { otherRunning.also { otherRunning = false } },
-        )
+    fun `given a Chrome routine when started then it's handed to the page runner, not clicked here`() = runTest {
+        val page = FakePageRunner()
+        val controller = controllerWithPage(page)
+        controller.start(helper)
         runCurrent()
+        assertEquals(listOf<Routine>(helper), page.started)
+        assertEquals(RunState.Idle, controller.state.value)
+        assertTrue(controller.isActive)
+    }
+
+    @Test
+    fun `given a Chrome routine running when the hot key is pressed then it stops and nothing else starts`() = runTest {
+        val page = FakePageRunner()
+        val controller = controllerWithPage(page)
+        controller.start(helper)
         automation.keyPresses.tryEmit(preferences.value.toggleHotKey)
         runCurrent()
-        assertFalse(otherRunning)
+        assertEquals(1, page.stops)
         assertEquals(RunState.Idle, controller.state.value)
+        assertFalse(controller.isActive)
 
         automation.keyPresses.tryEmit(preferences.value.toggleHotKey)
         runCurrent()
         assertIs<RunState.CountingDown>(controller.state.value)
         controller.stop()
+    }
+
+    @Test
+    fun `given one routine running when another is started then it waits its turn`() = runTest {
+        val page = FakePageRunner()
+        val controller = controllerWithPage(page)
+        controller.start(helper)
+        controller.start(routine)
+        runCurrent()
+        assertEquals(RunState.Idle, controller.state.value)
+
+        controller.stop()
+        controller.start(routine)
+        runCurrent()
+        controller.start(helper)
+        assertEquals(1, page.started.size, "The page routine must not start while a click routine runs")
+        controller.stop()
+    }
+
+    @Test
+    fun `given Chrome can't start a routine when started then the reason is shown`() = runTest {
+        val page = FakePageRunner().apply { refusal = "Open Chrome first." }
+        val controller = controllerWithPage(page, selected = helper)
+        val messages = mutableListOf<String>()
+        backgroundScope.launch { controller.messages.collect { messages += it } }
+        runCurrent()
+        automation.keyPresses.tryEmit(preferences.value.toggleHotKey)
+        runCurrent()
+        assertEquals(listOf("Open Chrome first."), messages)
+        assertFalse(controller.isActive)
     }
 
     @Test

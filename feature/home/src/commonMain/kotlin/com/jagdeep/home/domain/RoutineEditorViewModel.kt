@@ -23,6 +23,8 @@ data class RoutineEditorUiState(
     val errors: DraftErrors = DraftErrors(),
     val capture: PointCapture? = null,
     val captureHotKey: HotKey = HotKey.F7,
+    val pageClickHotKey: HotKey = HotKey.F8,
+    val pageScrollHotKey: HotKey = HotKey.F9,
     val runningApps: List<String> = emptyList(),
     val isSaved: Boolean = false,
 )
@@ -32,6 +34,8 @@ class RoutineEditorViewModel(
     private val controller: ClickController,
     private val repository: RoutineRepository,
     private val newId: () -> String,
+    /** The kind of a new routine; an existing one keeps its own. */
+    private val newKind: RoutineKind = RoutineKind.Click,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(RoutineEditorUiState(isNew = routineId == null))
     val state = mutableState.asStateFlow()
@@ -42,10 +46,10 @@ class RoutineEditorViewModel(
             val library = repository.library.filterNotNull().first()
             val existing = routineId?.let { id -> library.routines.firstOrNull { it.id == id } }
             mutableState.update {
-                it.copy(isLoading = false, draft = existing?.toDraft() ?: RoutineDraft(name = "Routine ${library.routines.size + 1}"))
+                it.copy(isLoading = false, draft = existing?.toDraft() ?: RoutineDraft(kind = newKind, name = "Routine ${library.routines.size + 1}"))
             }
         }
-        viewModelScope.launch { controller.preferences.collect { prefs -> mutableState.update { it.copy(captureHotKey = prefs.captureHotKey) } } }
+        viewModelScope.launch { controller.preferences.collect { prefs -> mutableState.update { it.copy(captureHotKey = prefs.captureHotKey, pageClickHotKey = prefs.pageClickHotKey, pageScrollHotKey = prefs.pageScrollHotKey) } } }
         refreshApps()
     }
 
@@ -62,14 +66,23 @@ class RoutineEditorViewModel(
     fun updatePoint(index: Int, point: PointDraft) =
         updateDraft { draft -> draft.copy(points = draft.points.mapIndexed { i, old -> if (i == index) point else old }) }
 
-    /** Each press of the capture key adds a point, so several can be picked without coming back. */
+    /**
+     * Each press of the capture key adds a point, so several can be picked without coming back. A
+     * scroll and click routine has one spot, so a press replaces it and picking ends.
+     */
     fun startCapture() {
         if (captureJob != null) return
         mutableState.update { it.copy(capture = PointCapture(pointer = controller.pointerPosition())) }
         captureJob = viewModelScope.launch {
             launch {
                 controller.captures.collect { point ->
-                    updateDraft { it.copy(points = it.points + PointDraft(point.x.toString(), point.y.toString())) }
+                    val picked = PointDraft(point.x.toString(), point.y.toString())
+                    if (state.value.draft.kind == RoutineKind.ScrollClick) {
+                        updateDraft { it.copy(points = listOf(picked)) }
+                        finishCapture()
+                        return@collect
+                    }
+                    updateDraft { it.copy(points = it.points + picked) }
                     mutableState.update { it.copy(capture = it.capture?.copy(added = it.capture.added + 1)) }
                 }
             }

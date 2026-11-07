@@ -13,7 +13,7 @@ enum class RunOutcome(val label: String) {
     AccessLost("Stopped because input permission was turned off"),
     Failed("Stopped because a click couldn't be sent"),
     PageUnchanged("Stopped because the click didn't change the page"),
-    BrowserDisconnected("Stopped because Chrome closed or the helper was turned off"),
+    BrowserDisconnected("Stopped because Chrome closed"),
 }
 
 /** One finished run: written by Home and Page helper, shown by Activity. Holds no screen contents. */

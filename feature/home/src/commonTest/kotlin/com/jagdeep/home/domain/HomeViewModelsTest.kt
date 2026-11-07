@@ -183,6 +183,35 @@ class HomeViewModelsTest {
     }
 
     @Test
+    fun `given a new scroll and click routine when a spot is picked then it replaces the spot and picking ends`() = test {
+        val repository = FakeRoutineRepository(RoutineLibrary())
+        val viewModel = RoutineEditorViewModel(null, controller(repository), repository, newId = { "new-id" }, newKind = RoutineKind.ScrollClick)
+        runCurrent()
+        assertEquals(RoutineKind.ScrollClick, viewModel.state.value.draft.kind)
+        repeat(2) { attempt ->
+            viewModel.startCapture()
+            runCurrent()
+            automation.position = ScreenPoint(10 + attempt, 20)
+            automation.keyPresses.emit(HotKey.F7)
+            runCurrent()
+        }
+        assertEquals(listOf(PointDraft("11", "20")), viewModel.state.value.draft.points)
+        assertNull(viewModel.state.value.capture)
+
+        viewModel.save()
+        runCurrent()
+        assertEquals(ScrollClickRoutine("new-id", "Routine 1", ClickPoint(11, 20)), repository.library.value!!.routines.single())
+    }
+
+    @Test
+    fun `given a page helper routine selected when access is missing then it can still start`() = test {
+        automation.inputAccess = InputAccess.NeedsPermission
+        val helper = PageHelperRoutine("h", "Course")
+        assertFalse(helper.needsInputAccess())
+        assertTrue(first.needsInputAccess())
+    }
+
+    @Test
     fun `given points when one is edited or removed then only that one changes`() = test {
         val viewModel = editor(FakeRoutineRepository(RoutineLibrary()))
         runCurrent()

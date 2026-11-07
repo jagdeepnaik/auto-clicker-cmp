@@ -19,6 +19,10 @@ import com.jagdeep.home.domain.ClickPoint
 import com.jagdeep.home.domain.ClickRoutine
 import com.jagdeep.home.domain.ClickTarget
 import com.jagdeep.home.domain.FakeAutomation
+import com.jagdeep.home.domain.FakePageRunner
+import com.jagdeep.home.domain.PageHelperRoutine
+import com.jagdeep.home.domain.RoutineKind
+import com.jagdeep.home.domain.ScrollClickRoutine
 import com.jagdeep.home.domain.FakeRoutineRepository
 import com.jagdeep.home.domain.FakeRunHistory
 import com.jagdeep.home.domain.HomeViewModel
@@ -99,14 +103,73 @@ class HomeScreensUiTest {
     }
 
     @Test
-    fun `given no routines when shown then it invites creating one`() = runDesktopComposeUiTest(1000, 800) {
+    fun `given no routines when New routine is pressed then it asks for the kind and opens that one`() = runDesktopComposeUiTest(1000, 800) {
         val empty = FakeRoutineRepository(RoutineLibrary())
-        var opened = false
+        var opened: RoutineKind? = null
         val viewModel = HomeViewModel(controller(), empty)
-        setContent { AppTheme(darkTheme = false) { HomeScreen(viewModel, appIcon = {}, onNewRoutine = { opened = true }, onEditRoutine = {}) } }
+        setContent { AppTheme(darkTheme = false) { HomeScreen(viewModel, appIcon = {}, onNewRoutine = { opened = it }, onEditRoutine = {}) } }
         onNodeWithText("No routines yet").assertExists()
         onNodeWithText("New routine").performClick()
-        assertTrue(opened)
+        RoutineKind.entries.forEach { onNodeWithText(it.label).assertExists() }
+        onNodeWithText(RoutineKind.ScrollClick.label).performClick()
+        assertEquals(RoutineKind.ScrollClick, opened)
+    }
+
+    @Test
+    fun `given routines of every kind when listed then each shows its kind`() = runDesktopComposeUiTest(1000, 800) {
+        val mixed = FakeRoutineRepository(
+            RoutineLibrary(listOf(atPointer, ScrollClickRoutine("s", "Next pages", ClickPoint(640, 880)), PageHelperRoutine("h", "Course")), "s"),
+        )
+        val viewModel = HomeViewModel(controller(), mixed)
+        setContent { AppTheme(darkTheme = false) { HomeScreen(viewModel, appIcon = {}, onNewRoutine = {}, onEditRoutine = {}) } }
+        onNodeWithText("Scroll and click · at 640, 880 · 20 rounds · stops for videos").assertExists()
+        onNodeWithText("Page helper · Next, Continue, Play, Watch video").assertExists()
+        saveShot("home-kinds")
+    }
+
+    @Test
+    fun `given a page helper routine running when shown then it says what to press, and Stop stops it`() = runDesktopComposeUiTest(1000, 800) {
+        val page = FakePageRunner()
+        val helper = PageHelperRoutine("h", "Course")
+        val library = FakeRoutineRepository(RoutineLibrary(listOf(helper), "h"))
+        val controller = ClickController(
+            automation, library, MutableStateFlow(AppPreferences()), FakeRunHistory(), scope, { System.currentTimeMillis() }, { "run" }, page = page,
+        )
+        val viewModel = HomeViewModel(controller, library)
+        setContent { AppTheme(darkTheme = true) { HomeScreen(viewModel, appIcon = {}, onNewRoutine = {}, onEditRoutine = {}) } }
+        onNodeWithText("Start").performClick()
+        page.state.value = page.state.value.copy(foundLabel = "Next")
+        waitUntil(timeoutMillis = 5_000) { viewModel.state.value.page.foundLabel == "Next" }
+        onNodeWithText("Page helper on").assertExists()
+        onNodeWithText("Next step: Next. Press F8 to click it.").assertExists()
+        onNodeWithText("Start scrolling").performClick()
+        waitUntil(timeoutMillis = 5_000) { page.state.value.isScrolling }
+        saveShot("home-page-helper")
+
+        onNodeWithText("Stop").performClick()
+        waitUntil(timeoutMillis = 5_000) { !viewModel.state.value.isActive }
+        onNodeWithText("Ready").assertExists()
+    }
+
+    @Test
+    fun `given a new scroll and click routine when saved without a spot then it asks for one`() = runDesktopComposeUiTest(1000, 1200) {
+        val empty = FakeRoutineRepository(RoutineLibrary())
+        val viewModel = RoutineEditorViewModel(null, controller(), empty, newId = { "new" }, newKind = RoutineKind.ScrollClick)
+        setContent { AppTheme(darkTheme = false) { RoutineEditorScreen(viewModel, onBack = {}) } }
+        onNodeWithText("No spot picked yet.").assertExists()
+        saveShot("editor-scroll-click")
+        onNodeWithText("Save").performScrollTo().performClick()
+        onNodeWithText("Pick the spot to click.").assertExists()
+        assertTrue(empty.library.value!!.routines.isEmpty())
+    }
+
+    @Test
+    fun `given a new page helper routine when opened then it offers words and speed`() = runDesktopComposeUiTest(1000, 1200) {
+        val viewModel = RoutineEditorViewModel(null, controller(), FakeRoutineRepository(RoutineLibrary()), newId = { "new" }, newKind = RoutineKind.PageHelper)
+        setContent { AppTheme(darkTheme = false) { RoutineEditorScreen(viewModel, onBack = {}) } }
+        onNodeWithText("Words, most important first").assertExists()
+        onNodeWithText("Speed: 60 pixels a second").assertExists()
+        saveShot("editor-page-helper")
     }
 
     @Test

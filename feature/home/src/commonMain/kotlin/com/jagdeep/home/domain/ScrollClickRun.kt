@@ -1,4 +1,4 @@
-package com.jagdeep.pagehelper.domain
+package com.jagdeep.home.domain
 
 import com.jagdeep.automation.InputAccess
 import com.jagdeep.automation.InputAccessGate

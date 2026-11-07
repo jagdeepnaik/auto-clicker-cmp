@@ -47,6 +47,21 @@ class SettingsViewModelTest {
         assertTrue(store.data.first().keepDisplayOn)
     }
 
+    @Test
+    fun `given the Chrome extension when connected or set up then Settings shows it and explains problems`() = test {
+        val connected = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val viewModel = SettingsViewModel(store, FakeGate(), connected, installExtension = { "No disk space." })
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.browserConnected)
+        connected.value = true
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.browserConnected)
+
+        viewModel.showExtension()
+        advanceUntilIdle()
+        assertEquals("No disk space.", viewModel.messages.first())
+    }
+
     private fun test(block: suspend TestScope.() -> Unit) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {

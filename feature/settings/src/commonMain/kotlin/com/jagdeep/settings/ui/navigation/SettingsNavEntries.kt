@@ -12,16 +12,19 @@ import com.jagdeep.settings.ui.screens.SettingsScreen
 import com.jagdeep.shared.preferences.AppPreferences
 import com.jagdeep.ui.navigation.Navigator
 import com.jagdeep.ui.navigation.RouteTopLevel
+import kotlinx.coroutines.flow.Flow
 
 fun EntryProviderScope<NavKey>.settingsEntryProvider(
     navigator: Navigator,
     preferencesStore: PreferencesStore<AppPreferences>,
     accessGate: InputAccessGate,
     appVersion: String,
+    browserConnected: Flow<Boolean>,
+    onInstallExtension: suspend () -> String?,
 ) {
     entry<RouteTopLevel.Settings> {
         val viewModel: SettingsViewModel = viewModel(factory = viewModelFactory {
-            initializer { SettingsViewModel(preferencesStore, accessGate) }
+            initializer { SettingsViewModel(preferencesStore, accessGate, browserConnected, onInstallExtension) }
         })
         SettingsScreen(viewModel, onBack = navigator::goBack, appVersion = appVersion)
     }

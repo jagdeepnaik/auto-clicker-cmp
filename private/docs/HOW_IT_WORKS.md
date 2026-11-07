@@ -45,7 +45,7 @@ flowchart LR
     subgraph App[AutoClicker desktop app]
         UI[Screens and ViewModels]
         CC[ClickController]
-        PH[PageHelperController]
+        PH[PageController]
         Auto[core:automation]
         Bridge[core:localbridge]
         UI --> CC
@@ -80,14 +80,25 @@ The project uses Kotlin Multiplatform and Compose Multiplatform. Modules depend 
 | `core:ui` | Theme, palettes, scaffold, app bars, toasts, navigation helpers |
 | `core:common`, `core:logger` | Platform and time helpers, logging |
 | `core:network`, `core:notifications`, `core:transfer` | Inherited from the template and not used by this app |
-| `feature:home` | The Clicker tab: routines, the editor, `ClickController`, `ClickRun` |
-| `feature:pagehelper` | The Page helper tab: `PageHelperController`, `ScrollClickRun` |
+| `feature:home` | The Routines tab: every kind of routine, the editor, `ClickController` and `ClickRun` for click routines, `PageController` and `ScrollClickRun` for Chrome routines |
 | `feature:activity` | The Activity tab and its history store |
 | `feature:settings` | The Settings tab |
 | `feature:shared` | `AppPreferences`, `RunRecord`, `RunOutcome`, `RunHistoryStore`, used by several features |
 | `iosApp` | iOS entry point. The app opens there and says it's desktop-only |
 
-The template's core modules are kept identical to the Zynk template. That's why the Page helper tab reuses the template's spare `RouteTopLevel.Sync` route, and why the root build pins a `zynk.*` resource package for `core:ui`.
+The template's core modules are kept identical to the Zynk template. That's why the root build pins a `zynk.*` resource package for `core:ui`, and why the template's spare `RouteTopLevel.Sync` route is left unused.
+
+### Routine types
+
+The Routines page lists every routine, whatever its kind, and **New routine** asks which kind to create. Each kind is a `Routine` subtype in `ClickRoutine.kt`, saved with a `type` field:
+
+| Kind | Saved as | Runs in | What it does |
+| --- | --- | --- | --- |
+| Click routine | `ClickRoutine` (`click`) | `ClickController` with `ClickRun` | Clicks at the pointer or at saved points, in any app ([section 6](#6-routines-the-clicker)) |
+| Scroll and click | `ScrollClickRoutine` (`scrollClick`) | `PageController` with `ScrollClickRun` | Scrolls a Chrome page to the bottom, plays videos, clicks a spot, repeats ([section 10](#10-scroll-and-click-step-by-step)) |
+| Page helper | `PageHelperRoutine` (`pageHelper`) | `PageController` | Highlights the next button in Chrome while it runs; F8 clicks it and F9 scrolls ([section 9](#9-page-helper-by-hand)) |
+
+To add a kind: add a `Routine` subtype and a `RoutineKind` entry, teach `RoutineDraft` to edit it, add its editor section, and give it a runner that `ClickController.start` hands it to. Routines saved before kinds existed have no `type` and load as click routines.
 
 ---
 
@@ -100,16 +111,16 @@ The template's core modules are kept identical to the Zynk template. That's why 
    - `DesktopAutomation`, which starts the hot-key polling loop
    - the routine repository and the history store
    - `LocalBridge`, which starts the HTTP server on `127.0.0.1:47613`
-   - `PageHelperController`, which publishes its first state to the extension
+   - `PageController`, which runs Chrome routines and publishes its first state to the extension
    - `ClickController`
 4. **The theme waits for settings.** `App` draws nothing until the saved theme is read, so the app never flashes the wrong colours.
-5. **The scaffold and navigation appear**, with four tabs: Clicker, Page helper, Activity and Settings.
+5. **The scaffold and navigation appear**, with three tabs: Routines, Activity and Settings. The Chrome extension's setup is in Settings.
 
 The controllers live in `AppServices`, not in a screen, because hot keys and running routines have to keep working whichever tab is open.
 
 **On close:** `AppServices.shutdown()` stops any routine, cancels all background work (which also ends a Scroll and click run), closes the server and stops hot-key polling. Because the process is exiting, recording the interrupted run is best effort.
 
-**If the port is taken:** another program, usually a second copy of AutoClicker, may hold port 47613. The clicker still works, but the Page helper tab shows "Can't reach Chrome".
+**If the port is taken:** another program, usually a second copy of AutoClicker, may hold port 47613. Click routines still work, but a selected Chrome routine shows "Can't reach Chrome" on the Routines page and won't start.
 
 ---
 
@@ -145,14 +156,16 @@ Linux, Android and iOS use `UnsupportedDesktopAutomation`, where every action re
 | --- | --- | --- |
 | F6 | Start or stop the selected routine; stop a Scroll and click run | `ClickController` |
 | F7 | Record the pointer position while picking | Both controllers, when they're picking |
-| F8 | Click the highlighted button | `PageHelperController` |
-| F9 | Start or stop auto-scroll; stop a Scroll and click run | `PageHelperController` |
+| F8 | Click the highlighted button | `PageController` |
+| F9 | Start or stop auto-scroll; stop a Scroll and click run | `PageController` |
 
 **How keys are detected:** `PollingHotKeyMonitor` asks the operating system every 30 ms whether each of F1 to F12 is down. `HotKeyEdgeDetector` turns that into single presses, so holding a key counts once, and a key already held when polling starts doesn't count.
 
 This is deliberately not a keyboard hook. It only ever looks at function keys, so it can't see what you type. It also means **the key isn't swallowed**, so the app in front receives it too.
 
-**Why F6 can't do two things at once:** both controllers listen to the same keys, so without care, F6 could stop a Scroll and click run and then start a routine with the same press. To prevent that, `ClickController.toggle()` first calls `stopOtherRun`, which `AppServices` connects to `PageHelperController.stopScrollClick`. If that stopped something, the press is used up.
+**Only one routine runs at a time.** Every kind of routine starts and stops through `ClickController`, which runs click routines itself and hands Chrome routines to `PageController`. `start()` does nothing while any routine runs, so two can never move the pointer at once.
+
+**F6 never does two things at once:** if any routine runs, F6 only stops it. Press it again to start the selected routine.
 
 Settings refuses to give one key two jobs, and explains the clash.
 
@@ -227,7 +240,7 @@ So a command reaches Chrome almost instantly without constant requests. The app 
 sequenceDiagram
     participant E as background.js
     participant B as LocalBridge
-    participant C as PageHelperController
+    participant C as PageController
     E->>B: GET /state?after=-1
     B-->>E: {"version":1,"state":{...}}
     E->>B: GET /state?after=1
@@ -364,7 +377,7 @@ Reloading cuts off the `content.js` already running in open tabs, and Chrome doe
 ```mermaid
 sequenceDiagram
     participant K as F8
-    participant C as PageHelperController
+    participant C as PageController
     participant B as background.js
     participant F as content.js
     C->>C: Already knows "Next" is highlighted
@@ -375,7 +388,7 @@ sequenceDiagram
     F->>F: Still connected and usable? Then click()
 ```
 
-The controller ignores F8 when the helper is off or nothing is highlighted. The extension re-checks the button just before clicking. Some pages ignore this kind of scripted click.
+The controller ignores F8 unless a page helper routine is running and a button is highlighted. The extension re-checks the button just before clicking. Some pages ignore this kind of scripted click.
 
 **Pressing F9:** flips `isScrolling` and publishes. The scrolling frame starts or stops within one tick.
 
@@ -385,13 +398,13 @@ The controller ignores F8 when the helper is off or nothing is highlighted. The 
 
 ## 10. Scroll and click, step by step
 
-This mode scrolls to the bottom, clicks the spot you picked, waits for the page to change, and repeats. The app makes the click, through the operating system, so it works on any page element. The logic is in `ScrollClickRun`, and `PageHelperController` wires it up.
+This mode scrolls to the bottom, clicks the spot you picked, waits for the page to change, and repeats. The app makes the click, through the operating system, so it works on any page element. The logic is in `ScrollClickRun`, and `PageController` wires it up.
 
 ### Starting
 
-1. **Picking:** press **Pick on screen**, which sets `isPickingPoint`. The next F7 saves the pointer's position as `clickPoint`.
-2. **Checks:** `startScrollClick()` needs the helper on, the extension connected, a picked spot, no routine running, and permission. If something's missing, it shows the reason and doesn't start.
-3. **State:** it sets `scrollClick` and `isScrolling` *before* launching, so a second press can't start a second run, then publishes with `autoRun: true`.
+1. **Picking:** in the routine's editor, press **Pick on screen**. The next F7 saves the pointer's position as the routine's `point`.
+2. **Checks:** `PageController.start()` needs the extension connected and input permission, and `ClickController` only calls it when no routine is running. If something's missing, it shows the reason and doesn't start.
+3. **State:** it sets the activity and `isScrolling` *before* launching, so a second press can't start a second run, then publishes with `autoRun: true`.
 4. **Chrome comes forward:** `bringToFront("Google Chrome")` runs `open -a` on a Mac, and calls `SetForegroundWindow` on the most recent Chrome window on Windows.
 
 ### One round
@@ -429,14 +442,14 @@ The status line in the app shows the phase names above.
 
 The frame doing the scrolling runs `readPage()`. It counts as at the bottom when all of these hold:
 
-- `document.readyState` is `complete`, so a loading page never counts.
-- `scrollTop + clientHeight` is within 2 pixels of `scrollHeight`, or there's nothing to scroll.
+- `document.readyState` is `complete`, so a loading page doesn't count. After 15 seconds it stops waiting, so a stuck iframe can't hold a run forever.
+- `scrollTop + clientHeight` is within 2 pixels of `scrollHeight`, or there's nothing to scroll, or scrolling hasn't moved the page for 3 seconds. That last check covers pages that report more content than they let you reach.
 
 If no frame scrolls, the top frame reports instead.
 
 ### How "the page changed" is worked out
 
-At the bottom, `readPage()` also builds a **signature**: a hash of the address, the scroll height, the text length, and a hash of up to 200,000 characters of text. The app gets the hashes, never the address or text.
+Each frame's `readPage()` also hashes its address, page height, text length, up to 200,000 characters of text, and its image addresses. `background.js` combines every frame's hashes into one **signature**, because many pages keep their content in an iframe while the top frame never changes. The app gets a single hash, never the address, text or images.
 
 After a click, the page counts as changed if any of these is true:
 
@@ -548,11 +561,10 @@ Screen  ←  renders one UI state  ←  ViewModel  ←  flows
 
 | Tab | ViewModel | Notes |
 | --- | --- | --- |
-| Clicker | `HomeViewModel` | Rechecks permission every 2 seconds while it's missing, so allowing it in System Settings shows up by itself |
-| Routine editor | `RoutineEditorViewModel` | Holds the draft and pointer capture. Its route holds only the routine's ID |
-| Page helper | `PageHelperViewModel` | Keeps half-typed words and rounds in the field. Only valid values are saved |
+| Routines | `HomeViewModel` | Rechecks permission every 2 seconds while it's missing, so allowing it in System Settings shows up by itself |
+| Routine editor | `RoutineEditorViewModel` | Holds the draft and pointer capture, with a section for each kind of routine. Its route holds only the routine's ID, or the kind of a new one |
 | Activity | `ActivityViewModel` | Shows history, and asks before clearing it |
-| Settings | `SettingsViewModel` | Rejects a hot key already in use |
+| Settings | `SettingsViewModel` | Rejects a hot key already in use, and shows the extension's setup and connection |
 
 Desktop uses a sidebar with a fade between tabs. Phones use `TopLevelPager` with swiping, though the app itself is desktop-only for now.
 
@@ -607,7 +619,7 @@ Only one copy can hold the port, so quit the installed app before running from s
 
 | Level | Examples | Covers |
 | --- | --- | --- |
-| Logic with fakes | `ClickRunTest`, `ClickControllerTest`, `PageHelperTest` | Run behaviour, safety stops, timing on a virtual clock |
+| Logic with fakes | `ClickRunTest`, `ClickControllerTest`, `PageControllerTest` | Run behaviour, safety stops, timing on a virtual clock |
 | Storage | `PreferencesRoutineRepositoryTest`, `ActivityTest` | Saving and reading back |
 | Link | `JvmLocalBridgeTest` | Long polling and header checks |
 | Screens | `*ScreenUiTest`, `HomeScreensUiTest` | What each state shows. Set `UI_TEST_SHOT_DIR` to save images |
@@ -684,11 +696,13 @@ AUTOCLICKER_LIVE_INPUT_TEST=1 ./gradlew :core:automation:jvmTest --tests '*LiveI
 | Frame record lifetime | 3 seconds | `background.js` |
 | Service worker keep-alive | 20 seconds, plus a 1-minute alarm | `background.js` |
 | Bottom tolerance | 2 pixels | `content.js` |
+| No movement counted as the bottom | 3 seconds | `content.js` |
+| Longest wait for a page to finish loading | 15 seconds | `content.js` |
 | Video counted as on screen | 25% visible | `content.js` |
 | Video end tolerance | 0.5 seconds | `content.js` |
 | Wait after pressing a play button | 8 seconds | `content.js` |
-| Scroll speed | 10 to 400 pixels a second, default 60 | `PageHelperController` |
-| Rounds | 1 to 9,999, default 20 | `PageHelperController` |
+| Scroll speed | 10 to 400 pixels a second, default 60 | `ClickRoutine.kt` |
+| Rounds | 1 to 9,999, default 20 | `ClickRoutine.kt` |
 | Scroll and click check | 50 ms | `ScrollClickRun` |
 | Hold at the bottom | 2 seconds | `ScrollClickRun` |
 | Page change timeout | 15 seconds | `ScrollClickRun` |

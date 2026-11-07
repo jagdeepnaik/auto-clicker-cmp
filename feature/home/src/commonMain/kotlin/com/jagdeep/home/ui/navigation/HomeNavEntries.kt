@@ -12,6 +12,7 @@ import androidx.navigation3.runtime.NavKey
 import com.jagdeep.home.domain.ClickController
 import com.jagdeep.home.domain.HomeViewModel
 import com.jagdeep.home.domain.RoutineEditorViewModel
+import com.jagdeep.home.domain.RoutineKind
 import com.jagdeep.home.domain.RoutineRepository
 import com.jagdeep.home.ui.screens.HomeScreen
 import com.jagdeep.home.ui.screens.RoutineEditorScreen
@@ -20,9 +21,9 @@ import com.jagdeep.ui.navigation.RouteFlow
 import com.jagdeep.ui.navigation.RouteTopLevel
 import kotlinx.serialization.Serializable
 
-/** Create or edit a routine; holds only its opaque id. Owned by this feature. */
+/** Create or edit a routine; holds only its opaque id, or the kind of a new one. Owned by this feature. */
 @Serializable
-data class RouteRoutineEditor(val routineId: String? = null) : RouteFlow
+data class RouteRoutineEditor(val routineId: String? = null, val kind: String? = null) : RouteFlow
 
 fun EntryProviderScope<NavKey>.homeEntryProvider(
     navigator: Navigator,
@@ -38,13 +39,14 @@ fun EntryProviderScope<NavKey>.homeEntryProvider(
         HomeScreen(
             viewModel,
             appIcon = appIcon,
-            onNewRoutine = { navigator.navigate(RouteRoutineEditor()) },
+            onNewRoutine = { kind -> navigator.navigate(RouteRoutineEditor(kind = kind.name)) },
             onEditRoutine = { navigator.navigate(RouteRoutineEditor(it.id)) },
         )
     }
     entry<RouteRoutineEditor> { route ->
         val viewModel: RoutineEditorViewModel = viewModel(factory = viewModelFactory {
-            initializer { RoutineEditorViewModel(route.routineId, controller, repository, newRoutineId) }
+            val kind = RoutineKind.entries.firstOrNull { it.name == route.kind } ?: RoutineKind.Click
+            initializer { RoutineEditorViewModel(route.routineId, controller, repository, newRoutineId, kind) }
         })
         val state by viewModel.state.collectAsState()
         LaunchedEffect(state.isSaved) { if (state.isSaved) navigator.goBack() }

@@ -16,6 +16,7 @@ data class PointDraft(val x: String = "", val y: String = "")
 
 /** What the editor shows: numbers stay text until saved, so half-typed values are never lost. */
 data class RoutineDraft(
+    val kind: RoutineKind = RoutineKind.Click,
     val name: String = "",
     val targetMode: TargetMode = TargetMode.AtPointer,
     val points: List<PointDraft> = emptyList(),
@@ -29,6 +30,12 @@ data class RoutineDraft(
     val limitMinutes: String = "10",
     val onlyInApp: String? = null,
     val startDelaySeconds: String = "3",
+    // Chrome routines. A scroll and click routine uses the first of [points] as its spot.
+    val words: String = DEFAULT_WORDS.joinToString(", "),
+    val pixelsPerSecond: Int = DEFAULT_PIXELS_PER_SECOND,
+    val soundOnVideoEnd: Boolean = true,
+    val rounds: String = DEFAULT_SCROLL_CLICK_ROUNDS.toString(),
+    val watchVideos: Boolean = true,
 )
 
 /** Field-level problems; a null field is fine. */
@@ -39,8 +46,10 @@ data class DraftErrors(
     val randomExtra: String? = null,
     val limit: String? = null,
     val startDelay: String? = null,
+    val words: String? = null,
+    val rounds: String? = null,
 ) {
-    val hasAny: Boolean get() = listOf(name, points, interval, randomExtra, limit, startDelay).any { it != null }
+    val hasAny: Boolean get() = listOf(name, points, interval, randomExtra, limit, startDelay, words, rounds).any { it != null }
 }
 
 internal const val MIN_INTERVAL_MILLIS = 10L
@@ -51,6 +60,25 @@ private const val MAX_LIMIT_CLICKS = 1_000_000_000L
 private const val MAX_LIMIT_MINUTES = 7L * 24 * 60
 private const val MAX_START_DELAY_SECONDS = 60
 private const val MAX_COORDINATE = 100_000
+
+fun Routine.toDraft(): RoutineDraft = when (this) {
+    is ClickRoutine -> toDraft()
+    is ScrollClickRoutine -> RoutineDraft(
+        kind = RoutineKind.ScrollClick,
+        name = name,
+        points = listOf(PointDraft(point.x.toString(), point.y.toString())),
+        pixelsPerSecond = pixelsPerSecond,
+        rounds = rounds.toString(),
+        watchVideos = watchVideos,
+    )
+    is PageHelperRoutine -> RoutineDraft(
+        kind = RoutineKind.PageHelper,
+        name = name,
+        words = words.joinToString(", "),
+        pixelsPerSecond = pixelsPerSecond,
+        soundOnVideoEnd = soundOnVideoEnd,
+    )
+}
 
 fun ClickRoutine.toDraft(): RoutineDraft {
     // Shows the interval in the largest unit that keeps it a whole number.
@@ -76,14 +104,35 @@ fun ClickRoutine.toDraft(): RoutineDraft {
     )
 }
 
-fun RoutineDraft.validate(): DraftErrors {
-    val intervalMillis = interval.trim().toLongOrNull()?.let { it * intervalUnit.millis }
-    return DraftErrors(
-        name = when {
-            name.isBlank() -> "Enter a name."
-            name.trim().length > MAX_NAME_LENGTH -> "Use $MAX_NAME_LENGTH characters or fewer."
+fun RoutineDraft.validate(): DraftErrors = when (kind) {
+    RoutineKind.Click -> validateClick()
+    RoutineKind.ScrollClick -> DraftErrors(
+        name = nameError(),
+        points = when {
+            points.isEmpty() -> "Pick the spot to click."
+            points.first().x.coordinate() == null || points.first().y.coordinate() == null -> "The spot needs a whole-number X and Y."
             else -> null
         },
+        rounds = rounds.trim().toIntOrNull().let {
+            if (it == null || it !in MIN_SCROLL_CLICK_ROUNDS..MAX_SCROLL_CLICK_ROUNDS) "Use between $MIN_SCROLL_CLICK_ROUNDS and $MAX_SCROLL_CLICK_ROUNDS rounds." else null
+        },
+    )
+    RoutineKind.PageHelper -> DraftErrors(
+        name = nameError(),
+        words = if (parseWords(words).isEmpty()) "Add at least one word." else null,
+    )
+}
+
+private fun RoutineDraft.nameError(): String? = when {
+    name.isBlank() -> "Enter a name."
+    name.trim().length > MAX_NAME_LENGTH -> "Use $MAX_NAME_LENGTH characters or fewer."
+    else -> null
+}
+
+private fun RoutineDraft.validateClick(): DraftErrors {
+    val intervalMillis = interval.trim().toLongOrNull()?.let { it * intervalUnit.millis }
+    return DraftErrors(
+        name = nameError(),
         points = when {
             targetMode != TargetMode.AtPoints -> null
             points.isEmpty() -> "Add at least one point."
@@ -111,7 +160,26 @@ fun RoutineDraft.validate(): DraftErrors {
 }
 
 /** Builds the routine from a draft that has passed [validate]. */
-fun RoutineDraft.toRoutine(id: String): ClickRoutine = ClickRoutine(
+fun RoutineDraft.toRoutine(id: String): Routine = when (kind) {
+    RoutineKind.Click -> toClickRoutine(id)
+    RoutineKind.ScrollClick -> ScrollClickRoutine(
+        id = id,
+        name = name.trim(),
+        point = points.first().let { ClickPoint(it.x.trim().toInt(), it.y.trim().toInt()) },
+        rounds = rounds.trim().toInt(),
+        pixelsPerSecond = pixelsPerSecond.coerceIn(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND),
+        watchVideos = watchVideos,
+    )
+    RoutineKind.PageHelper -> PageHelperRoutine(
+        id = id,
+        name = name.trim(),
+        words = parseWords(words),
+        pixelsPerSecond = pixelsPerSecond.coerceIn(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND),
+        soundOnVideoEnd = soundOnVideoEnd,
+    )
+}
+
+private fun RoutineDraft.toClickRoutine(id: String): ClickRoutine = ClickRoutine(
     id = id,
     name = name.trim(),
     target = when (targetMode) {
