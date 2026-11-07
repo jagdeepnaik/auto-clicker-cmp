@@ -29,6 +29,7 @@ class AppWiringTest {
             stopWhenPointerMoves = false,
             stopAtScreenCorner = false,
             keepDisplayOn = true,
+            developerMode = true,
         )
         val stored = mutablePreferencesOf()
         writeAppPreferences(preferences, stored)

@@ -99,6 +99,31 @@ class ClickControllerTest {
     }
 
     @Test
+    fun `given developer mode when a key is pressed and a routine clicks then the log shows each step`() = runTest {
+        val entries = mutableListOf<String>()
+        val live = object : com.jagdeep.shared.live.LiveLog {
+            override val entries = MutableStateFlow<List<com.jagdeep.shared.live.LiveEntry>>(emptyList())
+            override val isRecording = true
+            override fun add(source: com.jagdeep.shared.live.LiveSource, text: String) {
+                entries += text
+            }
+            override fun clear() = Unit
+        }
+        val controller = ClickController(
+            automation, FakeRoutineRepository(RoutineLibrary(listOf(routine.copy(startDelaySeconds = 0)), "r")), preferences, history,
+            backgroundScope, { currentTime }, { "run" }, live = live,
+        )
+        runCurrent()
+        automation.keyPresses.tryEmit(preferences.value.toggleHotKey)
+        runCurrent()
+        controller.stop()
+        runCurrent()
+        assertEquals("F6 pressed", entries.first())
+        assertTrue("Click 1" in entries)
+        assertTrue(entries.last().startsWith("Ended Chrome button: Stopped by you"))
+    }
+
+    @Test
     fun `given a start delay when started then it counts down and sends nothing until it ends`() = runTest {
         val controller = controller()
         controller.start(routine)

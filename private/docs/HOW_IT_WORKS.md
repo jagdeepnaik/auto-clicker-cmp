@@ -570,6 +570,20 @@ Desktop uses a sidebar with a fade between tabs. Phones use `TopLevelPager` with
 
 ---
 
+### Developer mode's live log
+
+With **Developer mode** on in Settings, Activity gains a **Live log** view, next to **Runs**. It shows each step as it happens, with millisecond times:
+
+| Source | Logged by | Examples |
+| --- | --- | --- |
+| Chrome | `PageController` | Extension connected or not, every command sent (`→`, raw JSON, only when it changes), every message heard (`←`, raw JSON) |
+| Routine | `ClickController`, `PageController` | Started, refused and why, phase and round changes, pauses, ended with the outcome |
+| Click | both runners | Each click, and where |
+| Keys | both runners | Each hot key pressed, and what it did |
+| App | `AppServices` | Developer mode on, Chrome brought forward, display kept on or released |
+
+The log is `LiveLog` in `feature:shared`, implemented by `MemoryLiveLog` in `composeApp`. It keeps the newest 500 entries in memory only, never saved or sent anywhere. Recording happens only while the switch is on, and the `log { }` helper doesn't even build the text otherwise. **Pause** freezes the view for reading, **Copy** puts the whole log on the clipboard, and **Clear** empties it.
+
 ## 15. Privacy and security
 
 **No outside connections.** The app and extension contact nothing but each other, on this computer. There's no account, analytics or telemetry.
@@ -578,7 +592,7 @@ Desktop uses a sidebar with a fade between tabs. Phones use `TopLevelPager` with
 
 | Sent | Not sent |
 | --- | --- |
-| The highlighted button's label, up to 40 characters | Page text in general |
+| The highlighted button's label, up to 40 characters, which developer mode's log also shows | Page text in general |
 | Whether Chrome is in front, the page is at the bottom, and a video is playing | Page addresses |
 | Hashes for spotting a change | Passwords, form contents, anything you type |
 

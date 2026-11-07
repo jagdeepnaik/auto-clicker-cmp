@@ -14,6 +14,8 @@ import com.jagdeep.autoclicker.installBrowserExtension
 import com.jagdeep.persistence.preferences.PreferencesStore
 import com.jagdeep.settings.ui.navigation.settingsEntryProvider
 import com.jagdeep.shared.history.RunHistoryStore
+import com.jagdeep.shared.live.LiveLog
+import kotlinx.coroutines.flow.map
 import com.jagdeep.shared.preferences.AppPreferences
 import com.jagdeep.ui.navigation.NavigationState
 import com.jagdeep.ui.navigation.Navigator
@@ -31,6 +33,7 @@ fun AppNavHost(
     routineRepository: RoutineRepository,
     browserConnected: Flow<Boolean>,
     runHistory: RunHistoryStore,
+    liveLog: LiveLog,
     accessGate: InputAccessGate,
     appVersion: String,
     now: () -> Long,
@@ -40,7 +43,7 @@ fun AppNavHost(
 ) {
     val stacks = navigationState.rememberDecoratedStacks(entryProvider {
         homeEntryProvider(navigator, controller, routineRepository, newId, appIcon)
-        activityEntryProvider(navigator, runHistory, now)
+        activityEntryProvider(navigator, runHistory, now, liveLog, developerMode = preferencesStore.data.map { it.developerMode })
         settingsEntryProvider(navigator, preferencesStore, accessGate, appVersion, browserConnected, onInstallExtension = ::installBrowserExtension)
     })
     if (isDesktopPlatform()) {

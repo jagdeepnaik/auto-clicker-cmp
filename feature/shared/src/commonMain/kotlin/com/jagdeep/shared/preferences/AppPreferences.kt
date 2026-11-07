@@ -20,6 +20,8 @@ data class AppPreferences(
     val stopAtScreenCorner: Boolean = true,
     /** Stops the display sleeping while a routine, auto-scroll or a scroll and click run is going. */
     val keepDisplayOn: Boolean = false,
+    /** Shows a live log of what the app is doing in Activity, in memory only. */
+    val developerMode: Boolean = false,
 )
 
 /**

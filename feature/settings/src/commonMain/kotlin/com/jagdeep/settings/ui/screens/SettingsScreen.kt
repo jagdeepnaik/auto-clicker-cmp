@@ -174,6 +174,14 @@ fun SettingsScreen(
             ThemeModeRow(preferences.themeMode, viewModel::updateThemeMode)
             ColorPaletteRow(preferences.colorPalette, viewModel::updateColorPalette)
 
+            Group("Developer")
+            SwitchRow(
+                title = "Developer mode",
+                supporting = "Activity shows a live log of what the app does, including what it sends to and hears from Chrome. Kept in memory for this session only.",
+                checked = preferences.developerMode,
+                onChange = viewModel::updateDeveloperMode,
+            )
+
             Group("About")
             ListItem(colors = transparent(), headlineContent = { Text("Version") }, trailingContent = { Text(appVersion) })
             ListItem(

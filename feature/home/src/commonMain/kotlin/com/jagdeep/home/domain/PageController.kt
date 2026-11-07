@@ -8,6 +8,10 @@ import com.jagdeep.logger.Log
 import com.jagdeep.shared.history.RunHistoryStore
 import com.jagdeep.shared.history.RunOutcome
 import com.jagdeep.shared.history.RunRecord
+import com.jagdeep.shared.live.LiveLog
+import com.jagdeep.shared.live.LiveSource
+import com.jagdeep.shared.live.NoLiveLog
+import com.jagdeep.shared.live.log
 import com.jagdeep.shared.preferences.AppPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -113,6 +117,7 @@ class PageController(
     private val history: RunHistoryStore,
     private val now: () -> Long,
     private val newId: () -> String,
+    private val live: LiveLog = NoLiveLog,
 ) : PageRunner {
     private val pageReading = MutableStateFlow<PageReading?>(null)
     private val currentPreferences: StateFlow<AppPreferences> = preferences.stateIn(scope, SharingStarted.Eagerly, AppPreferences())
@@ -123,6 +128,7 @@ class PageController(
     }
     private var job: Job? = null
     private var advance = 0L
+    private var lastPublished: String? = null
 
     override val state: StateFlow<PageState> = mutableState.asStateFlow()
     override val lastRun: StateFlow<RunRecord?> = mutableLastRun.asStateFlow()
@@ -131,11 +137,17 @@ class PageController(
         publish()
         scope.launch {
             bridge.connected.collect { connected ->
+                live.log(LiveSource.Chrome) { if (connected) "Extension connected" else "Extension not connected" }
                 // Nothing is highlighted, as far as anyone knows, without a connection.
                 mutableState.update { it.copy(isConnected = connected, foundLabel = it.foundLabel.takeIf { connected }) }
             }
         }
-        scope.launch { bridge.problem.collect { problem -> mutableState.update { it.copy(problem = problem) } } }
+        scope.launch {
+            bridge.problem.collect { problem ->
+                if (problem != null) live.log(LiveSource.Chrome) { "Link problem: $problem" }
+                mutableState.update { it.copy(problem = problem) }
+            }
+        }
         scope.launch { bridge.incoming.collect(::onMessage) }
         scope.launch {
             automation.hotKeys.presses.collect { key ->
@@ -151,6 +163,14 @@ class PageController(
 
     override fun start(routine: Routine): String? {
         if (isActive) return null
+        val refusal = startOrRefuse(routine)
+        live.log(LiveSource.Routine) {
+            if (refusal == null) "Started ${routine.name} (${routine.kind.label})" else "Didn't start ${routine.name}: $refusal"
+        }
+        return refusal
+    }
+
+    private fun startOrRefuse(routine: Routine): String? {
         state.value.problem?.let { return it }
         if (!state.value.isConnected) return NOT_CONNECTED
         return when (routine) {
@@ -178,9 +198,13 @@ class PageController(
     /** During a scroll and click routine, this is its stop control. */
     override fun toggleScrolling() {
         when (state.value.activity) {
-            is PageActivity.ScrollClick -> stop()
+            is PageActivity.ScrollClick -> {
+                live.log(LiveSource.Keys) { "Scroll key: stopping scroll and click" }
+                stop()
+            }
             is PageActivity.Helper -> {
                 mutableState.update { it.copy(isScrolling = !it.isScrolling) }
+                live.log(LiveSource.Keys) { if (state.value.isScrolling) "Scroll key: scrolling on" else "Scroll key: scrolling off" }
                 publish()
             }
             null -> Unit
@@ -217,6 +241,7 @@ class PageController(
         val prefs = currentPreferences.value
         try {
             // Start is pressed in this app, and nothing is clicked until Chrome is in front.
+            live.log(LiveSource.App) { "Bringing $BROWSER_APP_NAME to the front" }
             automation.apps.bringToFront(BROWSER_APP_NAME)
             outcome = scrollClickRun.execute(
                 point = ScreenPoint(routine.point.x, routine.point.y),
@@ -225,6 +250,13 @@ class PageController(
                 pages = pageReading,
                 setScrolling = ::setRunScrolling,
                 onProgress = { progress ->
+                    val previous = (state.value.activity as? PageActivity.ScrollClick)?.progress
+                    if (progress.clicks > clicks) {
+                        live.log(LiveSource.Click) { "Clicked at ${routine.point.x}, ${routine.point.y} (round ${progress.round} of ${progress.rounds})" }
+                    }
+                    if (previous == null || previous.phase != progress.phase || previous.round != progress.round) {
+                        live.log(LiveSource.Routine) { "Round ${progress.round} of ${progress.rounds}: ${progress.phase.name}" }
+                    }
                     clicks = progress.clicks
                     mutableState.update { it.copy(activity = PageActivity.ScrollClick(routine, progress)) }
                 },
@@ -244,6 +276,7 @@ class PageController(
 
     private suspend fun record(name: String, startedAt: Long, clicks: Long, outcome: RunOutcome) {
         val record = RunRecord(newId(), name, startedAt, now(), clicks, outcome)
+        live.log(LiveSource.Routine) { "Ended $name: ${outcome.label}, $clicks clicks" }
         mutableLastRun.value = record
         history.add(record)
     }
@@ -261,18 +294,26 @@ class PageController(
 
     private fun clickHighlighted() {
         val helper = state.value.activity as? PageActivity.Helper ?: return
-        if (state.value.foundLabel == null) return
+        val label = state.value.foundLabel
+        if (label == null) {
+            live.log(LiveSource.Keys) { "Click key: nothing highlighted, so no click" }
+            return
+        }
+        live.log(LiveSource.Keys) { "Click key: asking Chrome to click \"$label\"" }
         advance++
         mutableState.update { it.copy(activity = helper.copy(clicks = helper.clicks + 1)) }
         publish()
     }
 
     private fun onMessage(raw: String) {
+        live.log(LiveSource.Chrome) { "← ${raw.take(MAX_LOGGED_MESSAGE)}" }
         val event = try {
             json.decodeFromString(HelperEvent.serializer(), raw)
         } catch (_: SerializationException) {
+            live.log(LiveSource.Chrome) { "Ignored a message that isn't valid" }
             return
         } catch (_: IllegalArgumentException) {
+            live.log(LiveSource.Chrome) { "Ignored a message that isn't valid" }
             return
         }
         when (event.type) {
@@ -307,13 +348,17 @@ class PageController(
             autoRun = activity is PageActivity.ScrollClick,
             watchVideos = (activity as? PageActivity.ScrollClick)?.routine?.watchVideos ?: false,
         )
-        bridge.publish(json.encodeToString(HelperCommand.serializer(), command))
+        val encoded = json.encodeToString(HelperCommand.serializer(), command)
+        if (encoded != lastPublished) live.log(LiveSource.Chrome) { "→ $encoded" }
+        lastPublished = encoded
+        bridge.publish(encoded)
     }
 
     private companion object {
         const val TAG = "PageController"
         const val MAX_LABEL_LENGTH = 60
         const val MAX_SIGNATURE_LENGTH = 128
+        const val MAX_LOGGED_MESSAGE = 300
         const val NOT_CONNECTED = "Open Chrome with the extension added first. The steps are in Settings."
         val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     }

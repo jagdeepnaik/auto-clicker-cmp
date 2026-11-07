@@ -62,6 +62,16 @@ class SettingsViewModelTest {
         assertEquals("No disk space.", viewModel.messages.first())
     }
 
+    @Test
+    fun `given developer mode when switched on then it's saved, and it starts off`() = test {
+        val viewModel = SettingsViewModel(store, FakeGate())
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.preferences.developerMode)
+        viewModel.updateDeveloperMode(true)
+        advanceUntilIdle()
+        assertTrue(store.data.first().developerMode)
+    }
+
     private fun test(block: suspend TestScope.() -> Unit) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {

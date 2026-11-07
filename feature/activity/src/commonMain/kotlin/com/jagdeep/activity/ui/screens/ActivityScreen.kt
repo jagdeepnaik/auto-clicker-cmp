@@ -33,7 +33,24 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.jagdeep.activity.domain.ActivityUiState
+import com.jagdeep.activity.domain.ActivityView
 import com.jagdeep.activity.domain.ActivityViewModel
+import com.jagdeep.activity.ui.util.liveLogText
+import com.jagdeep.activity.ui.util.liveTimeLabel
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.sp
 import com.jagdeep.activity.ui.util.clickCountLabel
 import com.jagdeep.activity.ui.util.durationLabel
 import com.jagdeep.activity.ui.util.runTimeLabel
@@ -49,10 +66,12 @@ fun ActivityScreen(viewModel: ActivityViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val topBarManager = LocalTopAppBarManager.current
     val hasRecords = state.records.isNotEmpty()
+    // The top bar's Clear empties the list of runs, so it's only offered while that list shows.
+    val offerClear = hasRecords && !state.showsLive
     SideEffect {
         topBarManager.value = TopAppBarState(RouteTopLevel.Activity) {
             AppBarTop("Activity", RouteTopLevel.Activity, onBack, {}, {}, actions = {
-                if (hasRecords) TextButton(onClick = viewModel::requestClear) { Text("Clear") }
+                if (offerClear) TextButton(onClick = viewModel::requestClear) { Text("Clear") }
             })
         }
     }
@@ -67,6 +86,72 @@ fun ActivityScreen(viewModel: ActivityViewModel, onBack: () -> Unit) {
             dismissButton = { TextButton(onClick = viewModel::cancelClear) { Text("Cancel") } },
         )
     }
+    Column(Modifier.fillMaxSize()) {
+        if (state.developerMode) ViewChooser(state.view, viewModel::show)
+        if (state.showsLive) LiveLogView(state, viewModel) else RunList(state)
+    }
+}
+
+@Composable
+private fun ViewChooser(selected: ActivityView, onSelect: (ActivityView) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        ActivityView.entries.forEachIndexed { index, view ->
+            SegmentedButton(
+                selected = view == selected,
+                onClick = { onSelect(view) },
+                shape = SegmentedButtonDefaults.itemShape(index, ActivityView.entries.size),
+                label = { Text(if (view == ActivityView.Live) "Live log" else "Runs") },
+            )
+        }
+    }
+}
+
+@Composable
+private fun LiveLogView(state: ActivityUiState, viewModel: ActivityViewModel) {
+    val timeZone = remember { TimeZone.currentSystemDefault() }
+    val clipboard = LocalClipboardManager.current
+    val listState = rememberLazyListState()
+    val entries = state.liveEntries
+    // Follows the newest entry, unless paused for reading.
+    LaunchedEffect(entries.lastOrNull()?.id) {
+        if (!state.isLivePaused && entries.isNotEmpty()) listState.scrollToItem(entries.lastIndex)
+    }
+    Column(Modifier.widthIn(max = 960.dp).fillMaxSize()) {
+        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = viewModel::toggleLivePaused) { Text(if (state.isLivePaused) "Resume" else "Pause") }
+            TextButton(onClick = { clipboard.setText(AnnotatedString(liveLogText(entries, timeZone))) }, enabled = entries.isNotEmpty()) { Text("Copy") }
+            TextButton(onClick = viewModel::clearLive, enabled = entries.isNotEmpty()) { Text("Clear") }
+            Text(
+                "${entries.size} entries · in memory only",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (entries.isEmpty()) {
+            Text(
+                "Nothing yet. Start a routine, or press a hot key, and each step appears here as it happens.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(16.dp),
+            )
+            return@Column
+        }
+        LazyColumn(Modifier.fillMaxSize(), state = listState) {
+            items(entries, key = { it.id }) { entry ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(liveTimeLabel(entry.atMillis, timeZone), style = MONO, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(entry.source.label, style = MONO, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(56.dp))
+                    Text(entry.text, style = MONO, modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+private val MONO = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+
+@Composable
+private fun RunList(state: ActivityUiState) {
+    val hasRecords = state.records.isNotEmpty()
     when {
         state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         !hasRecords -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {

@@ -7,6 +7,10 @@ import com.jagdeep.logger.Log
 import com.jagdeep.shared.history.RunHistoryStore
 import com.jagdeep.shared.history.RunOutcome
 import com.jagdeep.shared.history.RunRecord
+import com.jagdeep.shared.live.LiveLog
+import com.jagdeep.shared.live.LiveSource
+import com.jagdeep.shared.live.NoLiveLog
+import com.jagdeep.shared.live.log
 import com.jagdeep.shared.preferences.AppPreferences
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
@@ -50,6 +54,7 @@ class ClickController(
     random: Random = Random.Default,
     /** Runs the Chrome routines, so that only one routine of any kind runs at a time. */
     val page: PageRunner = NoPageRunner,
+    private val live: LiveLog = NoLiveLog,
 ) {
     private val run = ClickRun(automation.pointer, automation.apps, automation.access, now, random)
     private val currentPreferences: StateFlow<AppPreferences> = preferences.stateIn(scope, SharingStarted.Eagerly, AppPreferences())
@@ -75,6 +80,7 @@ class ClickController(
     init {
         scope.launch {
             automation.hotKeys.presses.collect { key ->
+                live.log(LiveSource.Keys) { "${key.name} pressed" }
                 val prefs = currentPreferences.value
                 when (key) {
                     prefs.toggleHotKey -> toggle()
@@ -114,6 +120,7 @@ class ClickController(
             page.start(routine)?.let(mutableMessages::tryEmit)
             return
         }
+        live.log(LiveSource.Routine) { "Starting ${routine.name} (${routine.kind.label}) after ${routine.startDelaySeconds} s" }
         when (automation.access.access()) {
             InputAccess.Granted -> Unit
             InputAccess.NeedsPermission -> {
@@ -160,7 +167,13 @@ class ClickController(
         val safety = RunSafety(prefs.stopWhenPointerMoves, prefs.stopAtScreenCorner)
         var outcome = RunOutcome.StoppedByUser
         try {
+            var lastPause: PauseReason? = null
             outcome = run.execute(routine, safety) { count, pause ->
+                if (count > clicks) live.log(LiveSource.Click) { "Click $count" }
+                if (pause != lastPause) {
+                    live.log(LiveSource.Routine) { if (pause == null) "Clicking again" else "Paused: $pause" }
+                    lastPause = pause
+                }
                 clicks = count
                 mutableState.value = RunState.Running(routine, count, pause)
             }
@@ -172,6 +185,7 @@ class ClickController(
         } finally {
             withContext(NonCancellable) {
                 val record = RunRecord(newId(), routine.name, startedAt, now(), clicks, outcome)
+                live.log(LiveSource.Routine) { "Ended ${routine.name}: ${outcome.label}, $clicks clicks" }
                 mutableLastRun.value = record
                 mutableState.value = RunState.Idle
                 history.add(record)

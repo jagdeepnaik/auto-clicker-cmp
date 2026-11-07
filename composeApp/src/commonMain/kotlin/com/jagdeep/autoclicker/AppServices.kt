@@ -21,6 +21,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import com.jagdeep.shared.live.LiveSource
+import com.jagdeep.shared.live.log
 import kotlinx.coroutines.launch
 
 /** The display stays on only when the user asked for that and something is running. */
@@ -39,6 +42,7 @@ internal class AppServices private constructor() {
     val automation: DesktopAutomation = createDesktopAutomation()
     val routines: RoutineRepository = PreferencesRoutineRepository(createDocumentStore(ROUTINES_STORE), scope)
     val runHistory: RunHistoryStore = PreferencesRunHistoryStore(createDocumentStore(RUN_HISTORY_STORE))
+    val liveLog = MemoryLiveLog(AppClock::nowMillis)
     private val bridge: LocalBridge = createLocalBridge(BROWSER_LINK_PORT, BROWSER_EXTENSION_ORIGIN)
     val page = PageController(
         automation = automation,
@@ -48,6 +52,7 @@ internal class AppServices private constructor() {
         history = runHistory,
         now = AppClock::nowMillis,
         newId = ::newId,
+        live = liveLog,
     )
 
     // Runs every kind of routine, one at a time, handing Chrome routines to [page].
@@ -60,9 +65,16 @@ internal class AppServices private constructor() {
         now = AppClock::nowMillis,
         newId = ::newId,
         page = page,
+        live = liveLog,
     )
 
     init {
+        scope.launch {
+            preferences.data.map { it.developerMode }.distinctUntilChanged().collect { on ->
+                liveLog.recording = on
+                liveLog.log(LiveSource.App) { "Developer mode on: recording what the app does" }
+            }
+        }
         // Launched last: every service it reads exists by now.
         scope.launch {
             combine(preferences.data, controller.state, page.state) { prefs, run, chrome ->
@@ -71,7 +83,10 @@ internal class AppServices private constructor() {
                     routineActive = run != RunState.Idle,
                     pageHelperActive = chrome.activity != null,
                 )
-            }.distinctUntilChanged().collect(automation::setDisplayAwake)
+            }.distinctUntilChanged().collect { awake ->
+                liveLog.log(LiveSource.App) { if (awake) "Keeping the display on" else "Display may sleep again" }
+                automation.setDisplayAwake(awake)
+            }
         }
     }
 

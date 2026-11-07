@@ -97,6 +97,7 @@ fun App() {
                         routineRepository = services.routines,
                         browserConnected = remember(services) { services.page.state.map { it.isConnected } },
                         runHistory = services.runHistory,
+                        liveLog = services.liveLog,
                         accessGate = services.automation.access,
                         appVersion = AppConfig.APP_VERSION_NAME,
                         now = AppClock::nowMillis,

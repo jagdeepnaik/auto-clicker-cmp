@@ -106,4 +106,45 @@ class ActivityTest {
         assertTrue(runTimeLabel(now - day, now, utc).startsWith("Yesterday, "))
         assertTrue(runTimeLabel(now - 400 * day, now, utc).contains("2024"))
     }
+
+    @Test
+    fun `given developer mode when off then only runs show, and when on the live log follows, pauses and clears`() = test {
+        val live = object : com.jagdeep.shared.live.LiveLog {
+            override val entries = kotlinx.coroutines.flow.MutableStateFlow<List<com.jagdeep.shared.live.LiveEntry>>(emptyList())
+            override val isRecording = true
+            override fun add(source: com.jagdeep.shared.live.LiveSource, text: String) {
+                entries.value = entries.value + com.jagdeep.shared.live.LiveEntry(entries.value.size.toLong() + 1, 0, source, text)
+            }
+            override fun clear() {
+                entries.value = emptyList()
+            }
+        }
+        val developerMode = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val viewModel = ActivityViewModel(PreferencesRunHistoryStore(InMemoryPreferencesStore("")), { 0L }, live, developerMode)
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.showsLive)
+
+        developerMode.value = true
+        live.add(com.jagdeep.shared.live.LiveSource.Chrome, "first")
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.showsLive)
+        assertEquals(listOf("first"), viewModel.state.value.liveEntries.map { it.text })
+
+        viewModel.toggleLivePaused()
+        live.add(com.jagdeep.shared.live.LiveSource.Chrome, "second")
+        advanceUntilIdle()
+        assertEquals(1, viewModel.state.value.liveEntries.size, "Paused for reading")
+        viewModel.toggleLivePaused()
+        assertEquals(2, viewModel.state.value.liveEntries.size, "Catches up on resume")
+
+        viewModel.show(com.jagdeep.activity.domain.ActivityView.Runs)
+        assertFalse(viewModel.state.value.showsLive)
+        viewModel.clearLive()
+        assertTrue(live.entries.value.isEmpty())
+    }
+
+    @Test
+    fun `given a time when shown in the live log then it has milliseconds`() {
+        assertEquals("00:00:01.042", com.jagdeep.activity.ui.util.liveTimeLabel(1_042, TimeZone.UTC))
+    }
 }

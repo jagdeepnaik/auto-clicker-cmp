@@ -126,6 +126,32 @@ class PageControllerTest {
         runCurrent()
     }
 
+    private class RecordingLog : com.jagdeep.shared.live.LiveLog {
+        override val entries = MutableStateFlow<List<com.jagdeep.shared.live.LiveEntry>>(emptyList())
+        override val isRecording = true
+        override fun add(source: com.jagdeep.shared.live.LiveSource, text: String) {
+            entries.value = entries.value + com.jagdeep.shared.live.LiveEntry(entries.value.size.toLong(), 0, source, text)
+        }
+        override fun clear() = Unit
+    }
+
+    @Test
+    fun `given developer mode when a page helper runs then the log shows what was sent, heard and done`() = runTest {
+        val live = RecordingLog()
+        val controller = PageController(desktop, bridge, MutableStateFlow(AppPreferences()), backgroundScope, history, { currentTime }, { "run" }, live)
+        runCurrent()
+        controller.start(helper)
+        found("Next")
+        press(HotKey.F8)
+        finish(controller)
+        val texts = live.entries.value.map { it.text }
+        assertTrue(texts.any { it.startsWith("→ ") && "\"enabled\":true" in it }, "The command sent to Chrome")
+        assertTrue(texts.any { it == "← {\"type\":\"found\",\"label\":\"Next\"}" }, "The message heard from Chrome")
+        assertTrue("Started Course pages (Page helper)" in texts)
+        assertTrue("Click key: asking Chrome to click \"Next\"" in texts)
+        assertTrue(texts.any { it.startsWith("Ended Course pages") })
+    }
+
     // Nothing running
 
     @Test

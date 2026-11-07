@@ -13,6 +13,7 @@ Built with Kotlin Multiplatform and Compose Multiplatform. macOS and Windows com
 - **Only in one app:** pause automatically unless a chosen app, such as Google Chrome, is in front.
 - **Activity:** what ran, how many clicks it made, and why it stopped.
 - **One page for every routine:** the Routines page holds click routines, scroll and click routines and page helper routines. Choose the kind with **New routine**. Only one routine runs at a time.
+- **Developer mode:** a Settings switch that turns Activity into a live log of what the app does, including every message to and from Chrome. Copy it to report a problem.
 - **Keep the display on:** an optional Settings switch that stops the display sleeping while something is running.
 
 ## Page helper (Chrome)

@@ -5,6 +5,7 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import com.jagdeep.activity.data.PreferencesRunHistoryStore
@@ -27,6 +28,32 @@ class ActivityScreenUiTest {
     fun `given no runs when shown then it explains what will appear`() = runDesktopComposeUiTest(1000, 700) {
         val viewModel = ActivityViewModel(PreferencesRunHistoryStore(InMemoryPreferencesStore("")), now = { now })
         setContent { AppTheme(darkTheme = false) { ActivityScreen(viewModel, onBack = {}) } }
+        onNodeWithText("No runs yet").assertExists()
+    }
+
+    @Test
+    fun `given developer mode when shown then the live log lists each step, and Runs shows the usual list`() = runDesktopComposeUiTest(1000, 700) {
+        val live = object : com.jagdeep.shared.live.LiveLog {
+            override val entries = kotlinx.coroutines.flow.MutableStateFlow(
+                listOf(
+                    com.jagdeep.shared.live.LiveEntry(1, now, com.jagdeep.shared.live.LiveSource.Chrome, "→ {\"enabled\":true}"),
+                    com.jagdeep.shared.live.LiveEntry(2, now + 42, com.jagdeep.shared.live.LiveSource.Chrome, "← {\"type\":\"found\",\"label\":\"Next\"}"),
+                ),
+            )
+            override val isRecording = true
+            override fun add(source: com.jagdeep.shared.live.LiveSource, text: String) = Unit
+            override fun clear() = Unit
+        }
+        val viewModel = ActivityViewModel(
+            PreferencesRunHistoryStore(InMemoryPreferencesStore("")), now = { now }, live = live, developerMode = kotlinx.coroutines.flow.flowOf(true),
+        )
+        setContent { AppTheme(darkTheme = false) { androidx.compose.material3.Surface { ActivityScreen(viewModel, onBack = {}) } } }
+        waitUntil(timeoutMillis = 5_000) { viewModel.state.value.liveEntries.size == 2 }
+        onNodeWithText("← {\"type\":\"found\",\"label\":\"Next\"}").assertExists()
+        onNodeWithText("2 entries · in memory only").assertExists()
+        saveShot("activity-live")
+
+        onNodeWithText("Runs").performClick()
         onNodeWithText("No runs yet").assertExists()
     }
 
