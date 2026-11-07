@@ -14,7 +14,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** Set while points are being picked with the capture hot key. */
-data class PointCapture(val pointer: ScreenPoint? = null, val added: Int = 0)
+data class PointCapture(
+    val pointer: ScreenPoint? = null,
+    val added: Int = 0,
+    /** Set while picking a new spot for an existing step, which then ends the picking. */
+    val replacing: Int? = null,
+)
 
 data class RoutineEditorUiState(
     val isLoading: Boolean = true,
@@ -46,7 +51,7 @@ class RoutineEditorViewModel(
             val library = repository.library.filterNotNull().first()
             val existing = routineId?.let { id -> library.routines.firstOrNull { it.id == id } }
             mutableState.update {
-                it.copy(isLoading = false, draft = existing?.toDraft() ?: RoutineDraft(kind = newKind, name = "Routine ${library.routines.size + 1}"))
+                it.copy(isLoading = false, draft = existing?.toDraft() ?: newDraft(newKind, "Routine ${library.routines.size + 1}"))
             }
         }
         viewModelScope.launch { controller.preferences.collect { prefs -> mutableState.update { it.copy(captureHotKey = prefs.captureHotKey, pageClickHotKey = prefs.pageClickHotKey, pageScrollHotKey = prefs.pageScrollHotKey) } } }
@@ -85,12 +90,20 @@ class RoutineEditorViewModel(
      * Each press of the capture key adds a point, so several can be picked without coming back. A
      * scroll and click routine has one spot, so a press replaces it and picking ends.
      */
-    fun startCapture() {
+    fun startCapture(replacing: Int? = null) {
         if (captureJob != null) return
-        mutableState.update { it.copy(capture = PointCapture(pointer = controller.pointerPosition())) }
+        mutableState.update { it.copy(capture = PointCapture(pointer = controller.pointerPosition(), replacing = replacing)) }
         captureJob = viewModelScope.launch {
             launch {
                 controller.captures.collect { point ->
+                    if (replacing != null) {
+                        // A step keeps its wait and button; only where it clicks changes.
+                        updateDraft { draft ->
+                            draft.copy(points = draft.points.mapIndexed { i, old -> if (i == replacing) old.copy(x = point.x.toString(), y = point.y.toString()) else old })
+                        }
+                        finishCapture()
+                        return@collect
+                    }
                     val picked = newPoint(state.value.draft, point.x.toString(), point.y.toString())
                     if (state.value.draft.kind == RoutineKind.ScrollClick) {
                         updateDraft { it.copy(points = listOf(picked)) }
@@ -127,6 +140,12 @@ class RoutineEditorViewModel(
             repository.save(draft.toRoutine(routineId ?: newId()))
             mutableState.update { it.copy(isSaved = true) }
         }
+    }
+
+    /** A new multi-point click runs its list once until told otherwise. */
+    private fun newDraft(kind: RoutineKind, name: String): RoutineDraft = when (kind) {
+        RoutineKind.Sequence -> RoutineDraft(kind = kind, name = name, targetMode = TargetMode.AtPoints, limitMode = LimitMode.Passes, limitPasses = "1")
+        else -> RoutineDraft(kind = kind, name = name)
     }
 
     private companion object {

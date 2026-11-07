@@ -152,6 +152,29 @@ class HomeScreensUiTest {
     }
 
     @Test
+    fun `given a multi-point click when a step is opened then it can be changed and picked again`() = runDesktopComposeUiTest(1000, 1700) {
+        val viewModel = RoutineEditorViewModel("points", controller(), repository, newId = { "new" })
+        setContent { AppTheme(darkTheme = false) { androidx.compose.material3.Surface { RoutineEditorScreen(viewModel, onBack = {}) } } }
+        onNodeWithText("Left click at 100, 200").assertExists()
+        onNodeWithText("Left click at 300, 400").assertExists()
+        onNodeWithText("waits 1 min").assertExists()
+        onNodeWithText("Left click at 300, 400").performClick()
+        onNodeWithText("Right").performClick()
+        waitUntil(timeoutMillis = 5_000) { viewModel.state.value.draft.points[1].button == com.jagdeep.automation.PointerButton.Right }
+        onNodeWithText("Right click at 300, 400").assertExists()
+        saveShot("editor-steps")
+
+        onNodeWithText("Pick again").performClick()
+        waitUntil(timeoutMillis = 5_000) { viewModel.state.value.capture?.replacing == 1 }
+        Thread.sleep(200) // Lets the capture collector subscribe on the real dispatcher.
+        automation.position = ScreenPoint(7, 8)
+        automation.keyPresses.tryEmit(HotKey.F7)
+        waitUntil(timeoutMillis = 5_000) { viewModel.state.value.draft.points[1].x == "7" }
+        assertEquals(2, viewModel.state.value.draft.points.size, "Picking again replaces the spot")
+        assertEquals(com.jagdeep.automation.PointerButton.Right, viewModel.state.value.draft.points[1].button)
+    }
+
+    @Test
     fun `given a new scroll and click routine when saved without a spot then it asks for one`() = runDesktopComposeUiTest(1000, 1200) {
         val empty = FakeRoutineRepository(RoutineLibrary())
         val viewModel = RoutineEditorViewModel(null, controller(), empty, newId = { "new" }, newKind = RoutineKind.ScrollClick)
@@ -187,7 +210,7 @@ class HomeScreensUiTest {
     fun `given picking on screen when the hot key is pressed then the point appears in the editor`() = runDesktopComposeUiTest(1000, 1700) {
         val viewModel = RoutineEditorViewModel("points", controller(), repository, newId = { "new" })
         setContent { AppTheme(darkTheme = true) { RoutineEditorScreen(viewModel, onBack = {}) } }
-        onNodeWithText("Pick on screen").performScrollTo().performClick()
+        onNodeWithText("Pick more on screen").performScrollTo().performClick()
         waitUntil(timeoutMillis = 5_000) { viewModel.state.value.capture != null }
         Thread.sleep(200) // Lets the capture collector subscribe on the real dispatcher.
         automation.position = ScreenPoint(640, 480)

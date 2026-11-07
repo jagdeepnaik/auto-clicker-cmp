@@ -212,6 +212,31 @@ class HomeViewModelsTest {
     }
 
     @Test
+    fun `given a new multi-point click when opened then it runs its steps once and saves as one`() = test {
+        val repository = FakeRoutineRepository(RoutineLibrary())
+        val viewModel = RoutineEditorViewModel(null, controller(repository), repository, newId = { "seq" }, newKind = RoutineKind.Sequence)
+        runCurrent()
+        val draft = viewModel.state.value.draft
+        assertEquals(TargetMode.AtPoints, draft.targetMode)
+        assertEquals(LimitMode.Passes, draft.limitMode)
+        assertEquals("1", draft.limitPasses)
+
+        viewModel.updateDraft { it.copy(points = listOf(PointDraft("1", "2"))) }
+        viewModel.save()
+        runCurrent()
+        val saved = repository.library.value!!.routines.single()
+        assertEquals(RoutineKind.Sequence, saved.kind)
+        assertEquals(RunLimit.Passes(1), (saved as ClickRoutine).limit)
+    }
+
+    @Test
+    fun `given routines with and without points when shown then they're different kinds`() {
+        assertEquals(RoutineKind.Click, first.kind)
+        assertEquals(RoutineKind.Sequence, first.copy(target = ClickTarget.AtPoints(listOf(ClickPoint(1, 2)))).kind)
+        assertEquals(RoutineKind.Sequence, first.copy(target = ClickTarget.AtPoints(listOf(ClickPoint(1, 2)))).toDraft().kind)
+    }
+
+    @Test
     fun `given points when moved up or down then they swap, and the ends don't move further`() = test {
         val viewModel = editor(FakeRoutineRepository(RoutineLibrary()))
         runCurrent()

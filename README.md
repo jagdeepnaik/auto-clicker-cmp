@@ -6,13 +6,14 @@ Built with Kotlin Multiplatform and Compose Multiplatform. macOS and Windows com
 
 ## Features
 
-- **Routines:** click wherever the pointer is, or at a list of specific points. Each point has its own wait and button (left, right or middle), the points can be reordered, and they run top to bottom once, a number of times, or until you stop them.
+- **Click routine:** clicks wherever the pointer is, at a set interval, with the left, right or middle button.
+- **Multi-point click:** a list of steps, each with its own spot, wait and button. Reorder them, pick spots on screen with F7, and run the list once, a number of times, or until you stop it.
 - **Pick on screen:** hover over the target in the other app and press F7 to record each point.
 - **Timing:** any interval from 10 ms up to 24 hours, with an optional random extra wait, and a start delay.
 - **Stop conditions:** when you stop it, after a number of clicks, or after some time.
 - **Only in one app:** pause automatically unless a chosen app, such as Google Chrome, is in front.
 - **Activity:** what ran, how many clicks it made, and why it stopped.
-- **One page for every routine:** the Routines page holds click routines, scroll and click routines and page helper routines. Choose the kind with **New routine**. Only one routine runs at a time.
+- **One page for every routine:** the Routines page holds click routines, multi-point clicks, scroll and click routines and web page helper routines. Choose the kind with **New routine**. Only one routine runs at a time.
 - **Themed title bar:** the window's title bar follows the app's theme and colours.
 - **Developer mode:** a Settings switch that turns Activity into a live log of what the app does, including every message to and from Chrome. Copy it to report a problem.
 - **Keep the display on:** an optional Settings switch that stops the display sleeping while something is running.

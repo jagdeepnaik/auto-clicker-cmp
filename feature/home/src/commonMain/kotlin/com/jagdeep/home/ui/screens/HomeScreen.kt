@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdsClick
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -206,6 +207,7 @@ private fun KindChooser(onChoose: (RoutineKind) -> Unit, onDismiss: () -> Unit) 
 
 private fun RoutineKind.icon(): ImageVector = when (this) {
     RoutineKind.Click -> Icons.Default.AdsClick
+    RoutineKind.Sequence -> Icons.Default.FormatListNumbered
     RoutineKind.ScrollClick -> Icons.Default.VerticalAlignBottom
     RoutineKind.PageHelper -> Icons.Default.TravelExplore
 }

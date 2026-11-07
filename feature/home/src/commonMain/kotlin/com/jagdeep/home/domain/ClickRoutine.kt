@@ -7,7 +7,8 @@ import kotlinx.serialization.Serializable
 
 /** The kinds of routine the Routines page can create. Names are saved, so keep them stable. */
 enum class RoutineKind(val label: String, val description: String) {
-    Click("Click routine", "Clicks where you choose, in any app."),
+    Click("Click routine", "Clicks wherever the pointer is, in any app, at a set interval."),
+    Sequence("Multi-point click", "Clicks a list of spots in order. Each has its own wait and button, and the list can run once or repeat."),
     ScrollClick("Scroll and click", "Scrolls a Chrome page to the bottom, plays any videos, clicks your spot, and repeats."),
     PageHelper("Web page helper", "Highlights the next button on a Chrome page. You press a key to click it."),
 }
@@ -67,7 +68,10 @@ sealed interface RunLimit {
     data class Passes(val count: Long) : RunLimit
 }
 
-/** Clicks at the pointer or at saved points, in any app. */
+/**
+ * Clicks at the pointer (a click routine) or through a list of points (a multi-point click), in any
+ * app. Both kinds are saved as this type; the target decides which kind it is.
+ */
 @Serializable
 @SerialName(CLICK_ROUTINE_TYPE)
 data class ClickRoutine(
@@ -86,7 +90,7 @@ data class ClickRoutine(
     /** Time to get the pointer and the right window in place after pressing Start. */
     val startDelaySeconds: Int = 3,
 ) : Routine {
-    override val kind: RoutineKind get() = RoutineKind.Click
+    override val kind: RoutineKind get() = if (target is ClickTarget.AtPoints) RoutineKind.Sequence else RoutineKind.Click
 }
 
 /** Scrolls a Chrome page to the bottom, stopping for videos, clicks [point], and repeats. */

@@ -94,7 +94,8 @@ The Routines page lists every routine, whatever its kind, and **New routine** as
 
 | Kind | Saved as | Runs in | What it does |
 | --- | --- | --- | --- |
-| Click routine | `ClickRoutine` (`click`) | `ClickController` with `ClickRun` | Clicks at the pointer or at saved points, in any app ([section 6](#6-routines-the-clicker)) |
+| Click routine | `ClickRoutine` (`click`) with the pointer as its target | `ClickController` with `ClickRun` | Clicks wherever the pointer is, in any app ([section 6](#6-routines-the-clicker)) |
+| Multi-point click | `ClickRoutine` (`click`) with a list of points | `ClickController` with `ClickRun` | Clicks a list of steps in order, each with its own wait and button, once or repeated |
 | Scroll and click | `ScrollClickRoutine` (`scrollClick`) | `PageController` with `ScrollClickRun` | Scrolls a Chrome page to the bottom, plays videos, clicks a spot, repeats ([section 10](#10-scroll-and-click-step-by-step)) |
 | Web page helper | `PageHelperRoutine` (`pageHelper`) | `PageController` | Highlights the next button in Chrome while it runs; F8 clicks it and F9 scrolls ([section 9](#9-page-helper-by-hand)) |
 
@@ -176,6 +177,8 @@ Settings refuses to give one key two jobs, and explains the clash.
 ### What a routine holds
 
 `ClickRoutine` stores a name, a target (the pointer, or a list of points), a button, single or double click, an interval, a random extra wait, a stop limit, an optional "only in this app", and a start delay.
+
+**A routine with points is a multi-point click.** `ClickRoutine.kind` comes from its target, so both kinds share one saved type and one runner, and routines saved before the split need no change. The editor shows each kind its own sections: a multi-point click lists its steps as one-line rows that open for editing, with **Pick again** to re-pick one step's spot, and a **Repeat** section (Once, a number of times, until stopped, for a set time).
 
 **Points run as a sequence.** Each `ClickPoint` can carry its own `delayMillis` (the wait before its click, counted from the click before it) and its own `button`. The very first click comes straight after the start delay; on a repeat, the first point's wait follows the last point's click. A point saved before these existed uses the routine's interval and button, and the editor shows those values so they can be changed. The editor's arrows reorder the points. `RunLimit.Passes(n)` stops after the list has run `n` times, so 1 runs it once.
 

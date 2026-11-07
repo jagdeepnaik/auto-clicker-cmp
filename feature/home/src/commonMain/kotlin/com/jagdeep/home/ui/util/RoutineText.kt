@@ -31,7 +31,10 @@ private fun clickSummary(routine: ClickRoutine): String = buildList {
             add("${routine.button.label()} $kind every ${intervalLabel(routine.intervalMillis)}")
             add("at the pointer")
         }
-        is ClickTarget.AtPoints -> add(if (target.points.size == 1) "1 point" else "${target.points.size} points, top to bottom")
+        is ClickTarget.AtPoints -> {
+            add(if (target.points.size == 1) "1 step" else "${target.points.size} steps")
+            if (routine.clicksPerAction == 2) add("double clicks")
+        }
     }
     when (val limit = routine.limit) {
         RunLimit.UntilStopped -> Unit
@@ -41,6 +44,17 @@ private fun clickSummary(routine: ClickRoutine): String = buildList {
     }
     routine.onlyInApp?.let { add("only in $it") }
 }.joinToString(" · ")
+
+/** A step's wait, short and readable: "250 ms", "1.5 s", "2 min". */
+internal fun waitLabel(millis: Long): String = when {
+    millis < 1_000 -> "$millis ms"
+    millis % 60_000 == 0L -> "${millis / 60_000} min"
+    millis < 60_000 -> {
+        val tenths = millis / 100
+        if (tenths % 10 == 0L) "${tenths / 10} s" else "${tenths / 10}.${tenths % 10} s"
+    }
+    else -> "${millis / 60_000} min ${(millis % 60_000) / 1_000} s"
+}
 
 internal fun intervalLabel(millis: Long): String = when {
     millis % 60_000 == 0L -> "${millis / 60_000} min"

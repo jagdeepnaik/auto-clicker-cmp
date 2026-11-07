@@ -94,6 +94,7 @@ fun ClickRoutine.toDraft(): RoutineDraft {
     // Shows the interval in the largest unit that keeps it a whole number.
     val unit = IntervalUnit.entries.last { intervalMillis % it.millis == 0L }
     return RoutineDraft(
+        kind = kind,
         name = name,
         targetMode = if (target is ClickTarget.AtPoints) TargetMode.AtPoints else TargetMode.AtPointer,
         // A point saved without its own wait or button shows the routine's, which is what it used.
@@ -120,7 +121,7 @@ fun ClickRoutine.toDraft(): RoutineDraft {
 }
 
 fun RoutineDraft.validate(): DraftErrors = when (kind) {
-    RoutineKind.Click -> validateClick()
+    RoutineKind.Click, RoutineKind.Sequence -> validateClick()
     RoutineKind.ScrollClick -> DraftErrors(
         name = nameError(),
         points = when {
@@ -183,7 +184,7 @@ private fun RoutineDraft.validateClick(): DraftErrors {
 
 /** Builds the routine from a draft that has passed [validate]. */
 fun RoutineDraft.toRoutine(id: String): Routine = when (kind) {
-    RoutineKind.Click -> toClickRoutine(id)
+    RoutineKind.Click, RoutineKind.Sequence -> toClickRoutine(id)
     RoutineKind.ScrollClick -> ScrollClickRoutine(
         id = id,
         name = name.trim(),
