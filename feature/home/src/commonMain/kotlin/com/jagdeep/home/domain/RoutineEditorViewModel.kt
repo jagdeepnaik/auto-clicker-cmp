@@ -61,7 +61,22 @@ class RoutineEditorViewModel(
 
     fun removePoint(index: Int) = updateDraft { draft -> draft.copy(points = draft.points.filterIndexed { i, _ -> i != index }) }
 
-    fun addEmptyPoint() = updateDraft { draft -> draft.copy(points = draft.points + PointDraft()) }
+    fun addEmptyPoint() = updateDraft { draft -> draft.copy(points = draft.points + newPoint(draft, "", "")) }
+
+    /** Moves a point up ([by] -1) or down (+1); the points run top to bottom. */
+    fun movePoint(index: Int, by: Int) = updateDraft { draft ->
+        val target = index + by
+        if (index !in draft.points.indices || target !in draft.points.indices) return@updateDraft draft
+        val points = draft.points.toMutableList()
+        points[index] = points[target].also { points[target] = points[index] }
+        draft.copy(points = points)
+    }
+
+    /** A new point starts with the routine's own timing and button, ready to change. */
+    private fun newPoint(draft: RoutineDraft, x: String, y: String): PointDraft {
+        val interval = draft.interval.trim().toLongOrNull()?.let { it * draft.intervalUnit.millis } ?: DEFAULT_POINT_DELAY_MILLIS
+        return PointDraft(x, y, interval.toString(), draft.button)
+    }
 
     fun updatePoint(index: Int, point: PointDraft) =
         updateDraft { draft -> draft.copy(points = draft.points.mapIndexed { i, old -> if (i == index) point else old }) }
@@ -76,7 +91,7 @@ class RoutineEditorViewModel(
         captureJob = viewModelScope.launch {
             launch {
                 controller.captures.collect { point ->
-                    val picked = PointDraft(point.x.toString(), point.y.toString())
+                    val picked = newPoint(state.value.draft, point.x.toString(), point.y.toString())
                     if (state.value.draft.kind == RoutineKind.ScrollClick) {
                         updateDraft { it.copy(points = listOf(picked)) }
                         finishCapture()

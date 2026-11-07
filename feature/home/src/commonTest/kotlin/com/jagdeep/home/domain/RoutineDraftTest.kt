@@ -16,7 +16,9 @@ class RoutineDraftTest {
         val routine = ClickRoutine(
             id = "r",
             name = "Refresh",
-            target = ClickTarget.AtPoints(listOf(ClickPoint(-20, 400), ClickPoint(5, 6))),
+            target = ClickTarget.AtPoints(
+                listOf(ClickPoint(-20, 400, 750, PointerButton.Middle), ClickPoint(5, 6, 120_000, PointerButton.Right)),
+            ),
             button = PointerButton.Right,
             clicksPerAction = 2,
             intervalMillis = 120_000,
@@ -26,6 +28,22 @@ class RoutineDraftTest {
             startDelaySeconds = 7,
         )
         assertEquals(routine, routine.toDraft().toRoutine("r"))
+    }
+
+    @Test
+    fun `given points saved before they had their own wait and button when edited then they show the routine's`() {
+        val routine = ClickRoutine("r", "Old", target = ClickTarget.AtPoints(listOf(ClickPoint(1, 2))), button = PointerButton.Right, intervalMillis = 2_000)
+        assertEquals(listOf(PointDraft("1", "2", "2000", PointerButton.Right)), routine.toDraft().points)
+    }
+
+    @Test
+    fun `given passes when checked then they need specific points and a count in range`() {
+        val points = valid.copy(targetMode = TargetMode.AtPoints, points = listOf(PointDraft("1", "2")), limitMode = LimitMode.Passes)
+        assertFalse(points.validate().hasAny)
+        assertEquals(RunLimit.Passes(1), (points.toRoutine("r") as ClickRoutine).limit)
+        assertTrue(points.copy(limitPasses = "0").validate().limit != null)
+        assertTrue(points.copy(targetMode = TargetMode.AtPointer).validate().limit != null)
+        assertTrue(points.copy(points = listOf(PointDraft("1", "2", delayMillis = "5"))).validate().points != null, "Wait under 10 ms")
     }
 
     @Test

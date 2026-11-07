@@ -73,6 +73,8 @@ kotlin {
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
+            // Windows title bar colours (DWM).
+            implementation(libs.jna.platform)
         }
 
         commonTest.dependencies {

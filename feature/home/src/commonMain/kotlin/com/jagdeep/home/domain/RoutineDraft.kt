@@ -10,9 +10,17 @@ enum class IntervalUnit(val label: String, val millis: Long) {
 
 enum class TargetMode { AtPointer, AtPoints }
 
-enum class LimitMode { UntilStopped, Clicks, Minutes }
+enum class LimitMode { UntilStopped, Clicks, Minutes, Passes }
 
-data class PointDraft(val x: String = "", val y: String = "")
+/** One point in the list: where, how long to wait before its click (after the previous click), and which button. */
+data class PointDraft(
+    val x: String = "",
+    val y: String = "",
+    val delayMillis: String = DEFAULT_POINT_DELAY_MILLIS.toString(),
+    val button: PointerButton = PointerButton.Left,
+)
+
+internal const val DEFAULT_POINT_DELAY_MILLIS = 1_000L
 
 /** What the editor shows: numbers stay text until saved, so half-typed values are never lost. */
 data class RoutineDraft(
@@ -28,6 +36,7 @@ data class RoutineDraft(
     val limitMode: LimitMode = LimitMode.UntilStopped,
     val limitClicks: String = "100",
     val limitMinutes: String = "10",
+    val limitPasses: String = "1",
     val onlyInApp: String? = null,
     val startDelaySeconds: String = "3",
     // Chrome routines. A scroll and click routine uses the first of [points] as its spot.
@@ -58,6 +67,7 @@ private const val MAX_NAME_LENGTH = 60
 private const val MAX_RANDOM_EXTRA_MILLIS = 60L * 60 * 1000
 private const val MAX_LIMIT_CLICKS = 1_000_000_000L
 private const val MAX_LIMIT_MINUTES = 7L * 24 * 60
+private const val MAX_LIMIT_PASSES = 1_000_000L
 private const val MAX_START_DELAY_SECONDS = 60
 private const val MAX_COORDINATE = 100_000
 
@@ -86,7 +96,10 @@ fun ClickRoutine.toDraft(): RoutineDraft {
     return RoutineDraft(
         name = name,
         targetMode = if (target is ClickTarget.AtPoints) TargetMode.AtPoints else TargetMode.AtPointer,
-        points = (target as? ClickTarget.AtPoints)?.points.orEmpty().map { PointDraft(it.x.toString(), it.y.toString()) },
+        // A point saved without its own wait or button shows the routine's, which is what it used.
+        points = (target as? ClickTarget.AtPoints)?.points.orEmpty().map {
+            PointDraft(it.x.toString(), it.y.toString(), (it.delayMillis ?: intervalMillis).toString(), it.button ?: button)
+        },
         button = button,
         doubleClick = clicksPerAction == 2,
         interval = (intervalMillis / unit.millis).toString(),
@@ -96,7 +109,9 @@ fun ClickRoutine.toDraft(): RoutineDraft {
             RunLimit.UntilStopped -> LimitMode.UntilStopped
             is RunLimit.Clicks -> LimitMode.Clicks
             is RunLimit.Duration -> LimitMode.Minutes
+            is RunLimit.Passes -> LimitMode.Passes
         },
+        limitPasses = (limit as? RunLimit.Passes)?.count?.toString() ?: RoutineDraft().limitPasses,
         limitClicks = (limit as? RunLimit.Clicks)?.count?.toString() ?: RoutineDraft().limitClicks,
         limitMinutes = (limit as? RunLimit.Duration)?.let { (it.millis / 60_000).toString() } ?: RoutineDraft().limitMinutes,
         onlyInApp = onlyInApp,
@@ -137,6 +152,8 @@ private fun RoutineDraft.validateClick(): DraftErrors {
             targetMode != TargetMode.AtPoints -> null
             points.isEmpty() -> "Add at least one point."
             points.any { it.x.coordinate() == null || it.y.coordinate() == null } -> "Each point needs a whole-number X and Y."
+            points.any { point -> point.delayMillis.trim().toLongOrNull().let { it == null || it !in MIN_INTERVAL_MILLIS..MAX_INTERVAL_MILLIS } } ->
+                "Each wait must be from $MIN_INTERVAL_MILLIS ms to 24 hours."
             else -> null
         },
         interval = when {
@@ -154,6 +171,11 @@ private fun RoutineDraft.validateClick(): DraftErrors {
             LimitMode.UntilStopped -> null
             LimitMode.Clicks -> limitClicks.trim().toLongOrNull().let { if (it == null || it !in 1..MAX_LIMIT_CLICKS) "Use between 1 and $MAX_LIMIT_CLICKS clicks." else null }
             LimitMode.Minutes -> limitMinutes.trim().toLongOrNull().let { if (it == null || it !in 1..MAX_LIMIT_MINUTES) "Use between 1 and $MAX_LIMIT_MINUTES minutes." else null }
+            LimitMode.Passes -> when {
+                targetMode != TargetMode.AtPoints -> "Passes apply to specific points. Choose another way to stop."
+                limitPasses.trim().toLongOrNull().let { it == null || it !in 1..MAX_LIMIT_PASSES } -> "Use between 1 and $MAX_LIMIT_PASSES passes."
+                else -> null
+            }
         },
         startDelay = startDelaySeconds.trim().toIntOrNull().let { if (it == null || it !in 0..MAX_START_DELAY_SECONDS) "Use between 0 and $MAX_START_DELAY_SECONDS seconds." else null },
     )
@@ -184,7 +206,9 @@ private fun RoutineDraft.toClickRoutine(id: String): ClickRoutine = ClickRoutine
     name = name.trim(),
     target = when (targetMode) {
         TargetMode.AtPointer -> ClickTarget.AtPointer
-        TargetMode.AtPoints -> ClickTarget.AtPoints(points.map { ClickPoint(it.x.trim().toInt(), it.y.trim().toInt()) })
+        TargetMode.AtPoints -> ClickTarget.AtPoints(
+            points.map { ClickPoint(it.x.trim().toInt(), it.y.trim().toInt(), it.delayMillis.trim().toLong(), it.button) },
+        )
     },
     button = button,
     clicksPerAction = if (doubleClick) 2 else 1,
@@ -194,6 +218,7 @@ private fun RoutineDraft.toClickRoutine(id: String): ClickRoutine = ClickRoutine
         LimitMode.UntilStopped -> RunLimit.UntilStopped
         LimitMode.Clicks -> RunLimit.Clicks(limitClicks.trim().toLong())
         LimitMode.Minutes -> RunLimit.Duration(limitMinutes.trim().toLong() * 60_000)
+        LimitMode.Passes -> RunLimit.Passes(limitPasses.trim().toLong())
     },
     onlyInApp = onlyInApp,
     startDelaySeconds = startDelaySeconds.trim().toInt(),

@@ -23,20 +23,21 @@ internal fun routineSummary(routine: Routine): String = "${routine.kind.label} �
     is PageHelperRoutine -> routine.words.joinToString(", ")
 }
 
-/** "Left click every 1 s · at the pointer · in Google Chrome". */
+/** "Left click every 1 s · at the pointer · in Google Chrome", or "3 points, top to bottom · once". */
 private fun clickSummary(routine: ClickRoutine): String = buildList {
     val kind = if (routine.clicksPerAction == 2) "double click" else "click"
-    add("${routine.button.label()} $kind every ${intervalLabel(routine.intervalMillis)}")
-    add(
-        when (val target = routine.target) {
-            ClickTarget.AtPointer -> "at the pointer"
-            is ClickTarget.AtPoints -> if (target.points.size == 1) "1 point" else "${target.points.size} points"
-        },
-    )
+    when (val target = routine.target) {
+        ClickTarget.AtPointer -> {
+            add("${routine.button.label()} $kind every ${intervalLabel(routine.intervalMillis)}")
+            add("at the pointer")
+        }
+        is ClickTarget.AtPoints -> add(if (target.points.size == 1) "1 point" else "${target.points.size} points, top to bottom")
+    }
     when (val limit = routine.limit) {
         RunLimit.UntilStopped -> Unit
         is RunLimit.Clicks -> add(if (limit.count == 1L) "1 click" else "${limit.count} clicks")
         is RunLimit.Duration -> add("for ${intervalLabel(limit.millis)}")
+        is RunLimit.Passes -> add(if (limit.count == 1L) "once" else "${limit.count} times")
     }
     routine.onlyInApp?.let { add("only in $it") }
 }.joinToString(" · ")

@@ -9,7 +9,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdsClick
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -45,8 +50,15 @@ import org.jetbrains.compose.resources.painterResource
 internal val TOP_LEVEL_ROUTES: List<NavKey> = listOf(RouteTopLevel.Home, RouteTopLevel.Activity, RouteTopLevel.Settings)
 
 /** Application UI shell: hands the process-scoped [AppServices] to feature entry providers. */
+/**
+ * Application UI shell. A desktop window passes [windowTitleBar] to draw its own title strip at the
+ * top, and [onThemeApplied] to colour a native title bar to match the theme.
+ */
 @Composable
-fun App() {
+fun App(
+    windowTitleBar: (@Composable () -> Unit)? = null,
+    onThemeApplied: (dark: Boolean, background: Color, content: Color) -> Unit = { _, _, _ -> },
+) {
     // Services outlive this composition (activity recreation must not stop a run).
     val services = remember { AppServices.get() }
     val preferencesStore = services.preferences
@@ -77,7 +89,12 @@ fun App() {
     // Same names on both sides; feature:shared can't depend on core:ui's enum.
     val palette = Palette.valueOf(colorPalette.name)
     AppTheme(darkTheme = darkTheme, palette = palette) {
+        val scheme = MaterialTheme.colorScheme
+        SideEffect { onThemeApplied(darkTheme, scheme.surface, scheme.onSurface) }
         Surface(Modifier.fillMaxSize()) {
+          Column(Modifier.fillMaxSize()) {
+           windowTitleBar?.invoke()
+           Box(Modifier.weight(1f)) {
             CompositionLocalProvider(
                 LocalTopAppBarManager provides topAppBarManager,
                 LocalToastManager provides toastHost,
@@ -108,6 +125,8 @@ fun App() {
                 }
                 ToastHost(toastHost)
             }
+           }
+          }
         }
     }
 }

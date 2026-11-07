@@ -21,8 +21,8 @@ class PreferencesRoutineRepositoryTest {
     private val full = ClickRoutine(
         id = "r",
         name = "Full",
-        target = ClickTarget.AtPoints(listOf(ClickPoint(1, 2))),
-        limit = RunLimit.Clicks(5),
+        target = ClickTarget.AtPoints(listOf(ClickPoint(1, 2), ClickPoint(3, 4, delayMillis = 250, button = com.jagdeep.automation.PointerButton.Middle))),
+        limit = RunLimit.Passes(3),
         onlyInApp = "Google Chrome",
     )
 

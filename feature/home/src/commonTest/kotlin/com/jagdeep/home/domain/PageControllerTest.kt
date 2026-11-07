@@ -147,7 +147,7 @@ class PageControllerTest {
         val texts = live.entries.value.map { it.text }
         assertTrue(texts.any { it.startsWith("→ ") && "\"enabled\":true" in it }, "The command sent to Chrome")
         assertTrue(texts.any { it == "← {\"type\":\"found\",\"label\":\"Next\"}" }, "The message heard from Chrome")
-        assertTrue("Started Course pages (Page helper)" in texts)
+        assertTrue("Started Course pages (Web page helper)" in texts)
         assertTrue("Click key: asking Chrome to click \"Next\"" in texts)
         assertTrue(texts.any { it.startsWith("Ended Course pages") })
     }

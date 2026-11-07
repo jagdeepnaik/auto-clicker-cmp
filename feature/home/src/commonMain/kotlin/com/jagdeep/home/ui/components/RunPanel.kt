@@ -66,7 +66,7 @@ internal fun RunPanel(
     val chromeProblem = page.problem.takeIf { state.selected != null && state.selected !is ClickRoutine }
     val (icon, tint) = statusAppearance(state, access)
     val title = when {
-        activity is PageActivity.Helper -> "Page helper on"
+        activity is PageActivity.Helper -> "Web page helper on"
         activity is PageActivity.ScrollClick -> "Round ${activity.progress.round} of ${activity.progress.rounds}"
         run is RunState.CountingDown -> "Starting in ${run.secondsLeft}…"
         run is RunState.Running -> if (run.pause != null) "Paused" else "Clicking"

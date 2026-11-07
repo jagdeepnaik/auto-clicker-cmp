@@ -212,6 +212,27 @@ class HomeViewModelsTest {
     }
 
     @Test
+    fun `given points when moved up or down then they swap, and the ends don't move further`() = test {
+        val viewModel = editor(FakeRoutineRepository(RoutineLibrary()))
+        runCurrent()
+        viewModel.updateDraft { it.copy(points = listOf(PointDraft("1", "1"), PointDraft("2", "2"), PointDraft("3", "3"))) }
+        viewModel.movePoint(2, -1)
+        assertEquals(listOf("1", "3", "2"), viewModel.state.value.draft.points.map { it.x })
+        viewModel.movePoint(0, -1)
+        viewModel.movePoint(2, 1)
+        assertEquals(listOf("1", "3", "2"), viewModel.state.value.draft.points.map { it.x })
+    }
+
+    @Test
+    fun `given a routine with a 2 s interval and right button when a point is added then it starts with those`() = test {
+        val viewModel = editor(FakeRoutineRepository(RoutineLibrary()))
+        runCurrent()
+        viewModel.updateDraft { it.copy(interval = "2", intervalUnit = IntervalUnit.Seconds, button = com.jagdeep.automation.PointerButton.Right) }
+        viewModel.addEmptyPoint()
+        assertEquals(PointDraft("", "", "2000", com.jagdeep.automation.PointerButton.Right), viewModel.state.value.draft.points.single())
+    }
+
+    @Test
     fun `given points when one is edited or removed then only that one changes`() = test {
         val viewModel = editor(FakeRoutineRepository(RoutineLibrary()))
         runCurrent()

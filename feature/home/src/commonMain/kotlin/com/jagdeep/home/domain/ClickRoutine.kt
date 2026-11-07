@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 enum class RoutineKind(val label: String, val description: String) {
     Click("Click routine", "Clicks where you choose, in any app."),
     ScrollClick("Scroll and click", "Scrolls a Chrome page to the bottom, plays any videos, clicks your spot, and repeats."),
-    PageHelper("Page helper", "Highlights the next button on a Chrome page. You press a key to click it."),
+    PageHelper("Web page helper", "Highlights the next button on a Chrome page. You press a key to click it."),
 }
 
 /** Something the Routines page can save and run. Only one routine runs at a time. */
@@ -34,8 +34,17 @@ sealed interface ClickTarget {
     data class AtPoints(val points: List<ClickPoint>) : ClickTarget
 }
 
+/**
+ * A screen position. In a click routine's list of points, each can also have its own wait before its
+ * click (after the click before it) and its own button; without them it uses the routine's.
+ */
 @Serializable
-data class ClickPoint(val x: Int, val y: Int)
+data class ClickPoint(
+    val x: Int,
+    val y: Int,
+    val delayMillis: Long? = null,
+    val button: PointerButton? = null,
+)
 
 /** When a routine ends by itself. */
 @Serializable
@@ -51,6 +60,11 @@ sealed interface RunLimit {
     @Serializable
     @SerialName("duration")
     data class Duration(val millis: Long) : RunLimit
+
+    /** Times through the list of points, top to bottom: 1 runs it once. */
+    @Serializable
+    @SerialName("passes")
+    data class Passes(val count: Long) : RunLimit
 }
 
 /** Clicks at the pointer or at saved points, in any app. */

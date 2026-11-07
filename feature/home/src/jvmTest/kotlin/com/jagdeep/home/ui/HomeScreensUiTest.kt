@@ -123,7 +123,7 @@ class HomeScreensUiTest {
         val viewModel = HomeViewModel(controller(), mixed)
         setContent { AppTheme(darkTheme = false) { HomeScreen(viewModel, appIcon = {}, onNewRoutine = {}, onEditRoutine = {}) } }
         onNodeWithText("Scroll and click · at 640, 880 · 20 rounds · stops for videos").assertExists()
-        onNodeWithText("Page helper · Next, Continue, Play, Watch video").assertExists()
+        onNodeWithText("Web page helper · Next, Continue, Play, Watch video").assertExists()
         saveShot("home-kinds")
     }
 
@@ -140,7 +140,7 @@ class HomeScreensUiTest {
         onNodeWithText("Start").performClick()
         page.state.value = page.state.value.copy(foundLabel = "Next")
         waitUntil(timeoutMillis = 5_000) { viewModel.state.value.page.foundLabel == "Next" }
-        onNodeWithText("Page helper on").assertExists()
+        onNodeWithText("Web page helper on").assertExists()
         onNodeWithText("Next step: Next. Press F8 to click it.").assertExists()
         onNodeWithText("Start scrolling").performClick()
         waitUntil(timeoutMillis = 5_000) { page.state.value.isScrolling }

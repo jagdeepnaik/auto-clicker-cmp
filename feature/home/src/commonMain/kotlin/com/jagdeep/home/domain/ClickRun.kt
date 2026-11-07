@@ -45,7 +45,8 @@ internal class ClickRun(
         safety: RunSafety,
         onProgress: (clicks: Long, pause: PauseReason?) -> Unit,
     ): RunOutcome {
-        val points = (routine.target as? ClickTarget.AtPoints)?.points?.map { ScreenPoint(it.x, it.y) }
+        val steps = (routine.target as? ClickTarget.AtPoints)?.points
+        val points = steps?.map { ScreenPoint(it.x, it.y) }
         val startedAt = now()
         var clicks = 0L
         var nextPoint = 0
@@ -57,6 +58,8 @@ internal class ClickRun(
             RunLimit.UntilStopped -> false
             is RunLimit.Clicks -> clicks >= limit.count
             is RunLimit.Duration -> now() - startedAt >= limit.millis
+            // One pass clicks every point once; without points each click is a pass.
+            is RunLimit.Passes -> clicks >= limit.count * (points?.size ?: 1)
         }
 
         fun safetyStop(): RunOutcome? {
@@ -99,15 +102,18 @@ internal class ClickRun(
                 continue
             }
 
-            if (!pointer.click(point, routine.button, routine.clicksPerAction)) return RunOutcome.Failed
+            val button = steps?.get(nextPoint)?.button ?: routine.button
+            if (!pointer.click(point, button, routine.clicksPerAction)) return RunOutcome.Failed
             clicks++
             placedAt = point
             onProgress(clicks, null)
             if (points != null) nextPoint = (nextPoint + 1) % points.size
             if (limitReached()) return RunOutcome.Completed
 
+            // Each point's wait comes before its click, counted from the click before it.
+            val wait = steps?.get(nextPoint)?.delayMillis ?: routine.intervalMillis
             val extra = if (routine.randomExtraMillis > 0) random.nextLong(routine.randomExtraMillis + 1) else 0
-            waitWatching(routine.intervalMillis + extra)?.let { return it }
+            waitWatching(wait + extra)?.let { return it }
         }
     }
 

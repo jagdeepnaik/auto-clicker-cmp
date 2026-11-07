@@ -19,7 +19,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MyLocation
@@ -125,72 +127,74 @@ private fun ClickSections(state: RoutineEditorUiState, viewModel: RoutineEditorV
     val draft = state.draft
     val errors = state.errors
     val update = viewModel::updateDraft
-        Group("Where to click")
-        Column(Modifier.selectableGroup()) {
-            Choice("Wherever the pointer is", "You stay in control of the position.", draft.targetMode == TargetMode.AtPointer) {
-                update { it.copy(targetMode = TargetMode.AtPointer) }
-            }
-            Choice("Specific points", "Moves the pointer to each point in turn. Best when the target stays put, such as a button on a Chrome page.", draft.targetMode == TargetMode.AtPoints) {
-                update { it.copy(targetMode = TargetMode.AtPoints) }
-            }
+    Group("Where to click")
+    Column(Modifier.selectableGroup()) {
+        Choice("Wherever the pointer is", "You stay in control of the position.", draft.targetMode == TargetMode.AtPointer) {
+            update { it.copy(targetMode = TargetMode.AtPointer) }
         }
-        if (draft.targetMode == TargetMode.AtPoints) {
-            PointsEditor(state, viewModel)
+        Choice("Specific points", "Moves the pointer to each point in turn. Best when the target stays put, such as a button on a Chrome page.", draft.targetMode == TargetMode.AtPoints) {
+            update { it.copy(targetMode = TargetMode.AtPoints) }
         }
+    }
+    if (draft.targetMode == TargetMode.AtPoints) {
+        PointsEditor(state, viewModel)
+    }
 
-        Group("What to click with")
-        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                PointerButton.entries.forEachIndexed { index, button ->
-                    SegmentedButton(
-                        selected = draft.button == button,
-                        onClick = { update { it.copy(button = button) } },
-                        shape = SegmentedButtonDefaults.itemShape(index, PointerButton.entries.size),
-                        label = { Text(button.name) },
-                    )
-                }
+    // With points, each point has its own button and wait; these apply to clicking at the pointer.
+    val atPointer = draft.targetMode == TargetMode.AtPointer
+    Group(if (atPointer) "What to click with" else "Every click")
+    if (atPointer) Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            PointerButton.entries.forEachIndexed { index, button ->
+                SegmentedButton(
+                    selected = draft.button == button,
+                    onClick = { update { it.copy(button = button) } },
+                    shape = SegmentedButtonDefaults.itemShape(index, PointerButton.entries.size),
+                    label = { Text(button.name) },
+                )
             }
         }
-        ListItem(
-            modifier = Modifier.toggleable(value = draft.doubleClick, role = Role.Switch, onValueChange = { value -> update { it.copy(doubleClick = value) } }),
-            colors = transparent(),
-            headlineContent = { Text("Double click") },
-            trailingContent = { Switch(checked = draft.doubleClick, onCheckedChange = null) },
-        )
+    }
+    ListItem(
+        modifier = Modifier.toggleable(value = draft.doubleClick, role = Role.Switch, onValueChange = { value -> update { it.copy(doubleClick = value) } }),
+        colors = transparent(),
+        headlineContent = { Text("Double click") },
+        trailingContent = { Switch(checked = draft.doubleClick, onCheckedChange = null) },
+    )
 
-        Group("How often")
-        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-            NumberField(
-                label = "Every",
-                value = draft.interval,
-                error = errors.interval,
-                onChange = { value -> update { it.copy(interval = value) } },
-                modifier = Modifier.weight(1f),
-            )
-            IntervalUnitMenu(draft.intervalUnit, { unit -> update { it.copy(intervalUnit = unit) } }, Modifier.weight(1f))
-        }
+    Group(if (atPointer) "How often" else "Timing")
+    if (atPointer) Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
         NumberField(
-            label = "Random extra wait (ms)",
-            value = draft.randomExtraMillis,
-            error = errors.randomExtra,
-            supporting = "Adds up to this much to each wait. 0 keeps the timing exact.",
-            onChange = { value -> update { it.copy(randomExtraMillis = value) } },
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp),
+            label = "Every",
+            value = draft.interval,
+            error = errors.interval,
+            onChange = { value -> update { it.copy(interval = value) } },
+            modifier = Modifier.weight(1f),
         )
+        IntervalUnitMenu(draft.intervalUnit, { unit -> update { it.copy(intervalUnit = unit) } }, Modifier.weight(1f))
+    }
+    NumberField(
+        label = "Random extra wait (ms)",
+        value = draft.randomExtraMillis,
+        error = errors.randomExtra,
+        supporting = if (atPointer) "Adds up to this much to each wait. 0 keeps the timing exact." else "Adds up to this much to each point's wait. 0 keeps the timing exact.",
+        onChange = { value -> update { it.copy(randomExtraMillis = value) } },
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp),
+    )
 
-        Group("When to stop")
-        LimitEditor(draft, errors.limit, update)
+    Group("When to stop")
+    LimitEditor(draft, errors.limit, update, offerPasses = !atPointer)
 
-        Group("Where it may run")
-        AppMenu(draft.onlyInApp, state.runningApps, onOpen = viewModel::refreshApps, onSelect = { app -> update { it.copy(onlyInApp = app) } })
-        NumberField(
-            label = "Start delay (seconds)",
-            value = draft.startDelaySeconds,
-            error = errors.startDelay,
-            supporting = "Time to get to the right window after pressing Start.",
-            onChange = { value -> update { it.copy(startDelaySeconds = value) } },
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp),
-        )
+    Group("Where it may run")
+    AppMenu(draft.onlyInApp, state.runningApps, onOpen = viewModel::refreshApps, onSelect = { app -> update { it.copy(onlyInApp = app) } })
+    NumberField(
+        label = "Start delay (seconds)",
+        value = draft.startDelaySeconds,
+        error = errors.startDelay,
+        supporting = "Time to get to the right window after pressing Start.",
+        onChange = { value -> update { it.copy(startDelaySeconds = value) } },
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp),
+    )
 }
 
 @Composable
@@ -291,11 +295,21 @@ private fun SpeedSlider(value: Int, onChange: (Int) -> Unit) {
 @Composable
 private fun PointsEditor(state: RoutineEditorUiState, viewModel: RoutineEditorViewModel) {
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (state.draft.points.isNotEmpty()) {
+            Text(
+                "Runs top to bottom. Each wait is counted from the click before it; the first point clicks after the start delay.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        val count = state.draft.points.size
         state.draft.points.forEachIndexed { index, point ->
             PointRow(
                 index = index,
+                count = count,
                 point = point,
                 onChange = { viewModel.updatePoint(index, it) },
+                onMove = { by -> viewModel.movePoint(index, by) },
                 onRemove = { viewModel.removePoint(index) },
             )
         }
@@ -340,18 +354,34 @@ private fun CaptureStatus(capture: PointCapture, hotKey: HotKey, single: Boolean
 }
 
 @Composable
-private fun PointRow(index: Int, point: PointDraft, onChange: (PointDraft) -> Unit, onRemove: () -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        // Fixed width, so the X and Y columns line up whatever the number's digits.
-        Text("${index + 1}", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(20.dp))
-        NumberField("X", point.x, null, onChange = { onChange(point.copy(x = it)) }, modifier = Modifier.weight(1f))
-        NumberField("Y", point.y, null, onChange = { onChange(point.copy(y = it)) }, modifier = Modifier.weight(1f))
-        IconButton(onClick = onRemove) { Icon(Icons.Default.Close, contentDescription = "Remove point ${index + 1}") }
+private fun PointRow(index: Int, count: Int, point: PointDraft, onChange: (PointDraft) -> Unit, onMove: (Int) -> Unit, onRemove: () -> Unit) {
+    val number = index + 1
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Fixed width, so the columns line up whatever the number's digits.
+            Text("$number", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(20.dp))
+            NumberField("Wait (ms)", point.delayMillis, null, onChange = { onChange(point.copy(delayMillis = it)) }, modifier = Modifier.weight(1.2f))
+            NumberField("X", point.x, null, onChange = { onChange(point.copy(x = it)) }, modifier = Modifier.weight(1f))
+            NumberField("Y", point.y, null, onChange = { onChange(point.copy(y = it)) }, modifier = Modifier.weight(1f))
+            IconButton(onClick = { onMove(-1) }, enabled = index > 0) { Icon(Icons.Default.ArrowUpward, contentDescription = "Move point $number up") }
+            IconButton(onClick = { onMove(1) }, enabled = index < count - 1) { Icon(Icons.Default.ArrowDownward, contentDescription = "Move point $number down") }
+            IconButton(onClick = onRemove) { Icon(Icons.Default.Close, contentDescription = "Remove point $number") }
+        }
+        SingleChoiceSegmentedButtonRow(Modifier.padding(start = 32.dp).widthIn(max = 360.dp)) {
+            PointerButton.entries.forEachIndexed { buttonIndex, button ->
+                SegmentedButton(
+                    selected = point.button == button,
+                    onClick = { onChange(point.copy(button = button)) },
+                    shape = SegmentedButtonDefaults.itemShape(buttonIndex, PointerButton.entries.size),
+                    label = { Text(button.name) },
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun LimitEditor(draft: RoutineDraft, error: String?, update: ((RoutineDraft) -> RoutineDraft) -> Unit) {
+private fun LimitEditor(draft: RoutineDraft, error: String?, update: ((RoutineDraft) -> RoutineDraft) -> Unit, offerPasses: Boolean) {
     Column(Modifier.selectableGroup()) {
         Choice("When I stop it", null, draft.limitMode == LimitMode.UntilStopped) { update { it.copy(limitMode = LimitMode.UntilStopped) } }
         Choice("After a number of clicks", null, draft.limitMode == LimitMode.Clicks) { update { it.copy(limitMode = LimitMode.Clicks) } }
@@ -369,6 +399,18 @@ private fun LimitEditor(draft: RoutineDraft, error: String?, update: ((RoutineDr
                 onChange = { value -> update { it.copy(limitMinutes = value) } },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             )
+        }
+        if (offerPasses || draft.limitMode == LimitMode.Passes) {
+            Choice("After a number of passes", "A pass clicks every point once, top to bottom. 1 runs them once.", draft.limitMode == LimitMode.Passes) {
+                update { it.copy(limitMode = LimitMode.Passes) }
+            }
+            if (draft.limitMode == LimitMode.Passes) {
+                NumberField(
+                    "Passes", draft.limitPasses, error,
+                    onChange = { value -> update { it.copy(limitPasses = value) } },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                )
+            }
         }
     }
 }

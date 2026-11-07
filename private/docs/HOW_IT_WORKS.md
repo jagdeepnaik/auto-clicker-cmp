@@ -96,7 +96,7 @@ The Routines page lists every routine, whatever its kind, and **New routine** as
 | --- | --- | --- | --- |
 | Click routine | `ClickRoutine` (`click`) | `ClickController` with `ClickRun` | Clicks at the pointer or at saved points, in any app ([section 6](#6-routines-the-clicker)) |
 | Scroll and click | `ScrollClickRoutine` (`scrollClick`) | `PageController` with `ScrollClickRun` | Scrolls a Chrome page to the bottom, plays videos, clicks a spot, repeats ([section 10](#10-scroll-and-click-step-by-step)) |
-| Page helper | `PageHelperRoutine` (`pageHelper`) | `PageController` | Highlights the next button in Chrome while it runs; F8 clicks it and F9 scrolls ([section 9](#9-page-helper-by-hand)) |
+| Web page helper | `PageHelperRoutine` (`pageHelper`) | `PageController` | Highlights the next button in Chrome while it runs; F8 clicks it and F9 scrolls ([section 9](#9-page-helper-by-hand)) |
 
 To add a kind: add a `Routine` subtype and a `RoutineKind` entry, teach `RoutineDraft` to edit it, add its editor section, and give it a runner that `ClickController.start` hands it to. Routines saved before kinds existed have no `type` and load as click routines.
 
@@ -104,7 +104,7 @@ To add a kind: add a `Routine` subtype and a `RoutineKind` entry, teach `Routine
 
 ## 3. What happens at launch
 
-1. **`main.kt`** starts logging and opens the desktop window, restoring its size and position.
+1. **`main.kt`** starts logging and opens the desktop window, restoring its size and position. `DesktopTitleBar` makes the title bar follow the app's theme: on a Mac the native bar is transparent and `App` draws a strip in the theme's colours behind the window buttons (drag it to move the window); on Windows the colours go to the system title bar through DWM (Windows 11 takes exact colours, Windows 10 only dark or light).
 2. **`App.kt`** runs and calls `AppServices.get()`, which creates the process-wide services once.
 3. **`AppServices`** creates, in order:
    - the preference store, for settings
@@ -176,6 +176,8 @@ Settings refuses to give one key two jobs, and explains the clash.
 ### What a routine holds
 
 `ClickRoutine` stores a name, a target (the pointer, or a list of points), a button, single or double click, an interval, a random extra wait, a stop limit, an optional "only in this app", and a start delay.
+
+**Points run as a sequence.** Each `ClickPoint` can carry its own `delayMillis` (the wait before its click, counted from the click before it) and its own `button`. The very first click comes straight after the start delay; on a repeat, the first point's wait follows the last point's click. A point saved before these existed uses the routine's interval and button, and the editor shows those values so they can be changed. The editor's arrows reorder the points. `RunLimit.Passes(n)` stops after the list has run `n` times, so 1 runs it once.
 
 The editor keeps numbers as text in `RoutineDraft`, so half-typed values aren't lost. `validate()` checks them, and `toRoutine()` builds the routine once they pass.
 

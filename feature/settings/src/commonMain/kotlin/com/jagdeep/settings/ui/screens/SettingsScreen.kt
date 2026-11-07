@@ -98,13 +98,13 @@ fun SettingsScreen(
             )
             HotKeyRow(
                 title = "Click the highlighted button",
-                supporting = "Page helper routines: clicks the button highlighted in Chrome.",
+                supporting = "Web page helper routines: clicks the button highlighted in Chrome.",
                 selected = preferences.pageClickHotKey,
                 onSelect = viewModel::updatePageClickHotKey,
             )
             HotKeyRow(
                 title = "Auto-scroll",
-                supporting = "Page helper routines: starts or stops scrolling. Scroll and click: stops it.",
+                supporting = "Web page helper routines: starts or stops scrolling. Scroll and click: stops it.",
                 selected = preferences.pageScrollHotKey,
                 onSelect = viewModel::updatePageScrollHotKey,
             )
@@ -129,7 +129,7 @@ fun SettingsScreen(
                     colors = transparent(),
                     headlineContent = { Text(if (state.browserConnected) "Connected to Chrome" else "Not connected") },
                     supportingContent = {
-                        Text("Needed for scroll and click and page helper routines. It talks only to this app on this computer.")
+                        Text("Needed for scroll and click and web page helper routines. It talks only to this app on this computer.")
                     },
                 )
                 Column(Modifier.padding(horizontal = 16.dp)) {

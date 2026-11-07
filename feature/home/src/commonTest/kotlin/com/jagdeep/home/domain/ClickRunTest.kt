@@ -47,6 +47,38 @@ class ClickRunTest {
     }
 
     @Test
+    fun `given points with their own waits and buttons when run once then each waits after the click before it`() = runTest {
+        val routine = everySecond.copy(
+            target = ClickTarget.AtPoints(
+                listOf(
+                    ClickPoint(1, 1, delayMillis = 5_000, button = PointerButton.Right),
+                    ClickPoint(2, 2, delayMillis = 200, button = PointerButton.Middle),
+                    ClickPoint(3, 3, delayMillis = 3_000),
+                ),
+            ),
+            limit = RunLimit.Passes(1),
+        )
+        val clickedAt = mutableListOf<Long>()
+        val outcome = clickRun().execute(routine, RunSafety(stopWhenPointerMoves = false)) { _, _ -> clickedAt += currentTime }
+        assertEquals(RunOutcome.Completed, outcome)
+        assertEquals(listOf(PointerButton.Right, PointerButton.Middle, PointerButton.Left), automation.clicks.map { it.button })
+        assertEquals(listOf(ScreenPoint(1, 1), ScreenPoint(2, 2), ScreenPoint(3, 3)), automation.clicks.map { it.at })
+        // The first point clicks at once (after the start delay); then 200 ms, then 3 s.
+        assertEquals(listOf(0L, 200L, 3_200L), clickedAt.distinct())
+    }
+
+    @Test
+    fun `given points repeated for passes when run then the first point's wait follows the last click`() = runTest {
+        val routine = everySecond.copy(
+            target = ClickTarget.AtPoints(listOf(ClickPoint(1, 1, delayMillis = 5_000), ClickPoint(2, 2, delayMillis = 100))),
+            limit = RunLimit.Passes(2),
+        )
+        clickRun().execute(routine, RunSafety(stopWhenPointerMoves = false)) { _, _ -> }
+        assertEquals(4, automation.clicks.size)
+        assertEquals(100L + 5_000 + 100, currentTime)
+    }
+
+    @Test
     fun `given several points when run then they are clicked in order and repeat`() = runTest {
         val routine = everySecond.copy(target = ClickTarget.AtPoints(listOf(ClickPoint(1, 1), ClickPoint(2, 2))), limit = RunLimit.Clicks(3))
         clickRun().execute(routine, RunSafety()) { _, _ -> }

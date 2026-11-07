@@ -54,6 +54,10 @@ private fun ApplicationScope.DesktopWindow() {
         state = windowState,
         icon = painterResource("autoclicker-icon.png"),
     ) {
-        App()
+        remember(window) { DesktopTitleBar.prepare(window) }
+        App(
+            windowTitleBar = if (DesktopTitleBar.isMac) ({ MacTitleBar(AppConfig.APP_NAME) }) else null,
+            onThemeApplied = { dark, background, content -> DesktopTitleBar.apply(window, dark, background, content) },
+        )
     }
 }
