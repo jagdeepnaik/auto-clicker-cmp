@@ -14,7 +14,9 @@ Built with Kotlin Multiplatform and Compose Multiplatform. macOS and Windows com
 - **Only in one app:** pause automatically unless a chosen app, such as Google Chrome, is in front.
 - **Activity:** what ran, how many clicks it made, and why it stopped.
 - **One page for every routine:** the Routines page holds click routines, multi-point clicks, scroll and click routines and web page helper routines. Choose the kind with **New routine**. Only one routine runs at a time.
-- **Themed title bar:** the window's title bar follows the app's theme and colours.
+- **Desktop layout like Android Studio:** a toolbar in the title bar row with the routine to run and its Start and Stop, a narrow icon strip for the pages, the page in a rounded panel, and a status bar. Its colours follow the app's theme.
+- **Course helper:** for the Sagar Mein Yog course site. On the dashboard the next unfinished course is outlined, and on a course page the next unfinished part and one key press (F8) opens it; its video starts by itself at the site's speed, a sound plays when it ends, and Back to Course is outlined for the next press. Nothing is clicked without your key press, and quizzes and the assessment are never outlined.
+- **Share routines:** export one routine or all of them to a `.autoclicker.json` file, and import a file someone sent you. Imported routines are added alongside yours, and anything the editor wouldn't accept is left out. Spots are screen positions, so check them on a different screen.
 - **Developer mode:** a Settings switch that turns Activity into a live log of what the app does, including every message to and from Chrome. Copy it to report a problem.
 - **Keep the display on:** an optional Settings switch that stops the display sleeping while something is running.
 
@@ -34,7 +36,7 @@ For long feeds, "load more" lists and paged documents, the helper can also run b
 With **Stop for videos** on, it stops at each video it reaches and plays it so you can watch, at the speed the page set, pressing the video's play button if it has one. When the video ends, it scrolls the rest of the way and clicks. If Chrome won't start a video by itself, or you pause one, it waits for you to press play. Looping and silent autoplaying videos are skipped, and it can't see players that don't use a standard video element.
 
 1. On the Routines page, press **New routine** and choose **Scroll and click**.
-2. Press **Pick on screen**, hold the pointer over the spot in Chrome, and press **F7**. Set the number of rounds and save.
+2. Scroll to the bottom of the page, press **Pick steps on screen**, and press **F7** over each button to press there, in order. Each step has its own name, wait and button, like a multi-point click. A step can instead be a **button text**, such as "Back to Course": the extension finds that button wherever it is on the page and clicks it, waiting up to 30 seconds for it to appear. Set the number of rounds and save.
 3. Select the routine and press **Start**. Chrome comes to the front by itself. Clicking pauses whenever another app is in front, so leave Chrome there.
 
 After adding or reloading the extension, refresh any page that's already open.

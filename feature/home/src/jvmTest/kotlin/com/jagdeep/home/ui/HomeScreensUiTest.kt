@@ -120,10 +120,17 @@ class HomeScreensUiTest {
         val mixed = FakeRoutineRepository(
             RoutineLibrary(listOf(atPointer, ScrollClickRoutine("s", "Next pages", ClickPoint(640, 880)), PageHelperRoutine("h", "Course")), "s"),
         )
-        val viewModel = HomeViewModel(controller(), mixed)
+        val files = object : com.jagdeep.home.domain.RoutineFiles {
+            override suspend fun save(suggestedName: String, contents: String): String? = null
+            override suspend fun open(): String? = null
+        }
+        val viewModel = HomeViewModel(controller(), mixed, files)
         setContent { AppTheme(darkTheme = false) { HomeScreen(viewModel, appIcon = {}, onNewRoutine = {}, onEditRoutine = {}) } }
+        onNodeWithText("Import").assertExists()
+        onNodeWithText("Export all").assertExists()
         onNodeWithText("Scroll and click · at 640, 880 · 20 rounds · stops for videos").assertExists()
         onNodeWithText("Web page helper · Next, Continue, Play, Watch video").assertExists()
+        onNodeWithContentDescription("Export Next pages").assertExists()
         saveShot("home-kinds")
     }
 
@@ -155,13 +162,13 @@ class HomeScreensUiTest {
     fun `given a multi-point click when a step is opened then it can be changed and picked again`() = runDesktopComposeUiTest(1000, 1700) {
         val viewModel = RoutineEditorViewModel("points", controller(), repository, newId = { "new" })
         setContent { AppTheme(darkTheme = false) { androidx.compose.material3.Surface { RoutineEditorScreen(viewModel, onBack = {}) } } }
-        onNodeWithText("Left click at 100, 200").assertExists()
-        onNodeWithText("Left click at 300, 400").assertExists()
-        onNodeWithText("waits 1 min").assertExists()
-        onNodeWithText("Left click at 300, 400").performClick()
+        onNodeWithText("Point 1").assertExists()
+        onNodeWithText("Left click at 300, 400 · waits 1 min").assertExists()
+        onNodeWithText("Point 2").performClick()
         onNodeWithText("Right").performClick()
         waitUntil(timeoutMillis = 5_000) { viewModel.state.value.draft.points[1].button == com.jagdeep.automation.PointerButton.Right }
-        onNodeWithText("Right click at 300, 400").assertExists()
+        onNodeWithText("Right click at 300, 400 · waits 1 min").assertExists()
+        assertEquals("1" to com.jagdeep.home.domain.IntervalUnit.Minutes, viewModel.state.value.draft.points[1].let { it.delay to it.delayUnit })
         saveShot("editor-steps")
 
         onNodeWithText("Pick again").performClick()
@@ -179,10 +186,10 @@ class HomeScreensUiTest {
         val empty = FakeRoutineRepository(RoutineLibrary())
         val viewModel = RoutineEditorViewModel(null, controller(), empty, newId = { "new" }, newKind = RoutineKind.ScrollClick)
         setContent { AppTheme(darkTheme = false) { RoutineEditorScreen(viewModel, onBack = {}) } }
-        onNodeWithText("No spot picked yet.").assertExists()
+        onNodeWithText("Pick steps on screen").assertExists()
         saveShot("editor-scroll-click")
         onNodeWithText("Save").performScrollTo().performClick()
-        onNodeWithText("Pick the spot to click.").assertExists()
+        onNodeWithText("Add at least one step to click at the bottom.").assertExists()
         assertTrue(empty.library.value!!.routines.isEmpty())
     }
 

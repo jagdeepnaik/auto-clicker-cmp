@@ -43,6 +43,8 @@ internal class ClickRun(
     suspend fun execute(
         routine: ClickRoutine,
         safety: RunSafety,
+        /** Called with when the next click is due, each time a wait between clicks begins. */
+        onWait: (nextClickAtMillis: Long) -> Unit = {},
         onProgress: (clicks: Long, pause: PauseReason?) -> Unit,
     ): RunOutcome {
         val steps = (routine.target as? ClickTarget.AtPoints)?.points
@@ -113,6 +115,7 @@ internal class ClickRun(
             // Each point's wait comes before its click, counted from the click before it.
             val wait = steps?.get(nextPoint)?.delayMillis ?: routine.intervalMillis
             val extra = if (routine.randomExtraMillis > 0) random.nextLong(routine.randomExtraMillis + 1) else 0
+            onWait(now() + wait + extra)
             waitWatching(wait + extra)?.let { return it }
         }
     }

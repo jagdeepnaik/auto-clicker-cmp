@@ -98,6 +98,7 @@ The Routines page lists every routine, whatever its kind, and **New routine** as
 | Multi-point click | `ClickRoutine` (`click`) with a list of points | `ClickController` with `ClickRun` | Clicks a list of steps in order, each with its own wait and button, once or repeated |
 | Scroll and click | `ScrollClickRoutine` (`scrollClick`) | `PageController` with `ScrollClickRun` | Scrolls a Chrome page to the bottom, plays videos, clicks a spot, repeats ([section 10](#10-scroll-and-click-step-by-step)) |
 | Web page helper | `PageHelperRoutine` (`pageHelper`) | `PageController` | Highlights the next button in Chrome while it runs; F8 clicks it and F9 scrolls ([section 9](#9-page-helper-by-hand)) |
+| Course helper | `CourseHelperRoutine` (`courseHelper`) | `PageController` | For sagarmeinyog.com: outlines the next unfinished part or Back to Course; each key press opens it ([Course helper](#course-helper)) |
 
 To add a kind: add a `Routine` subtype and a `RoutineKind` entry, teach `RoutineDraft` to edit it, add its editor section, and give it a runner that `ClickController.start` hands it to. Routines saved before kinds existed have no `type` and load as click routines.
 
@@ -105,7 +106,7 @@ To add a kind: add a `Routine` subtype and a `RoutineKind` entry, teach `Routine
 
 ## 3. What happens at launch
 
-1. **`main.kt`** starts logging and opens the desktop window, restoring its size and position. `DesktopTitleBar` makes the title bar follow the app's theme: on a Mac the native bar is transparent and `App` draws a strip in the theme's colours behind the window buttons (drag it to move the window); on Windows the colours go to the system title bar through DWM (Windows 11 takes exact colours, Windows 10 only dark or light).
+1. **`main.kt`** starts logging and opens the desktop window, restoring its size and position. `DesktopTitleBar` fits the window to the desktop shell: on a Mac the title bar is see-through with the content running under it, so the app's toolbar shares the row with the system's window buttons (as in Android Studio), and `apple.awt.application.appearance=system` keeps those buttons in the Mac's light or dark style. On Windows the system title bar stays, coloured through DWM (Windows 11 takes exact colours, Windows 10 only dark or light), with the toolbar below it.
 2. **`App.kt`** runs and calls `AppServices.get()`, which creates the process-wide services once.
 3. **`AppServices`** creates, in order:
    - the preference store, for settings
@@ -407,7 +408,8 @@ This mode scrolls to the bottom, clicks the spot you picked, waits for the page 
 
 ### Starting
 
-1. **Picking:** in the routine's editor, press **Pick on screen**. The next F7 saves the pointer's position as the routine's `point`.
+1. **Picking:** in the routine's editor, press **Pick steps on screen** and press F7 over each spot to click at the bottom, in order. These are the routine's `points`, edited with the same step rows as a multi-point click: name, wait, spot and button. At the bottom, the first step waits its own wait after the page settles; each later step waits after the click before it, and nothing is clicked while Chrome isn't in front. A routine saved with a single `point` reads it as one step.
+   A step can instead be a **button text** (`ClickPoint.text`). Then the app sends `clickText` with a new `clickRequest` number; every frame looks for a visible, enabled button or link with that label; `background.js` has the best match clicked once (a scripted click, found again at the moment of clicking) and reports `textClicked` with the request number. The run waits up to 30 seconds, counting only while Chrome is in front, then stops with "a button wasn't found". The pointer isn't moved for these steps.
 2. **Checks:** `PageController.start()` needs the extension connected and input permission, and `ClickController` only calls it when no routine is running. If something's missing, it shows the reason and doesn't start.
 3. **State:** it sets the activity and `isScrolling` *before* launching, so a second press can't start a second run, then publishes with `autoRun: true`.
 4. **Chrome comes forward:** `bringToFront("Google Chrome")` runs `open -a` on a Mac, and calls `SetForegroundWindow` on the most recent Chrome window on Windows.
@@ -546,6 +548,8 @@ The window's size and position are stored separately, in Java Preferences under 
 
 Room is set up by the template but not used. Absent or unknown saved values fall back to defaults, and unreadable documents are treated as empty. The first launch creates one ready-to-use routine.
 
+**Routine files:** **Export** on a routine, or **Export all**, writes a readable JSON file (`RoutineFileCodec`) naming itself `autoclicker-routines`, version 1, with each routine in the same shape the app saves. **Import** reads one back through the system's Open panel: each routine gets a new id, so nothing of the user's is replaced, and must pass the editor's own checks, so a damaged or hand-edited file can't add, for example, a 0 ms interval. Files over 2 million characters, other formats and unknown routine kinds are refused. The file dialogs are `DesktopRoutineFiles` in `composeApp`; phones don't offer import or export.
+
 **Uninstalling:** delete `/Applications/AutoClicker.app`, `~/.autoclicker`, and the extension in `chrome://extensions`. To clear the permission entry, run `tccutil reset Accessibility com.jagdeep.autoclicker`.
 
 ---
@@ -571,9 +575,20 @@ Screen  ←  renders one UI state  ←  ViewModel  ←  flows
 | Activity | `ActivityViewModel` | Shows history, and asks before clearing it |
 | Settings | `SettingsViewModel` | Rejects a hot key already in use, and shows the extension's setup and connection |
 
-Desktop uses a sidebar with a fade between tabs. Phones use `TopLevelPager` with swiping, though the app itself is desktop-only for now.
+Desktop uses `DesktopShell` in `composeApp`, laid out like Android Studio: a toolbar (app name, a routine picker with Start and Stop, Chrome's status) in the title bar row, a narrow icon strip for the pages, the page in a rounded panel, and a status bar. `ShellModel` feeds the toolbar from the same `ClickController` and routines as the Routines page, so both always agree. Pages change with a fade. Phones use `TopLevelPager` with swiping, though the app itself is desktop-only for now.
 
 ---
+
+### Course helper
+
+A hands-on routine for one site, sagarmeinyog.com, built on the web page helper's key-press clicking. While it runs, the command carries `course: true`, and `content.js` uses `findCourseTarget` instead of word matching:
+
+- On the dashboard (`/dashboard`), the first course card that doesn't show "Completed" has its round play button outlined (a card is the nearest container showing "Min. Pass" and "Duration").
+- On a course page (`/dashboard/courses/<id>`), the first **Watch video** button whose row isn't completed, or else the header of a closed chapter (`aria-expanded="false"`), is outlined. Row status is read from the row's text without relying on word breaks.
+- On a lesson (`/dashboard/courses/<id>/<part>`), its `<video>` is started once, at the site's own speed, and **Back to Course** is outlined when it appears.
+- Each press of the click key clicks the outlined element once, exactly as the web page helper does. Play buttons are never pressed by the helper itself, and quizzes and the assessment are never outlined.
+
+It acts only on that site (and on `127.0.0.1` for the extension's own tests).
 
 ### Developer mode's live log
 

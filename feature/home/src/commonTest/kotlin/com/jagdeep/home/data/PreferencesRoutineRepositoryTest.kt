@@ -100,7 +100,7 @@ class PreferencesRoutineRepositoryTest {
 
     @Test
     fun `given one routine that can't be read when loading then the others still load`() = runTest {
-        val raw = """{"routines":[{"type":"scrollClick","id":"broken","name":"No spot"},{"id":"ok","name":"Fine"}],"selectedId":"ok"}"""
+        val raw = """{"routines":[{"type":"scrollClick","id":"broken"},{"id":"ok","name":"Fine"}],"selectedId":"ok"}"""
         val library = repository(InMemoryPreferencesStore(raw)).library.value!!
         assertEquals(listOf("Fine"), library.routines.map { it.name })
     }

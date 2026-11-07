@@ -112,6 +112,7 @@ internal class FakePageRunner : PageRunner {
         started += routine
         val activity = when (routine) {
             is PageHelperRoutine -> PageActivity.Helper(routine)
+            is CourseHelperRoutine -> PageActivity.Course(routine)
             is ScrollClickRoutine -> PageActivity.ScrollClick(routine, ScrollClickProgress(1, routine.rounds, 0, ScrollClickPhase.ReadingPage))
             is ClickRoutine -> return "not a page routine"
         }

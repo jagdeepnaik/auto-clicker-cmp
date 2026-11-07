@@ -1,6 +1,7 @@
 package com.jagdeep.home.domain
 
 import com.jagdeep.automation.PointerButton
+import kotlin.math.roundToLong
 
 enum class IntervalUnit(val label: String, val millis: Long) {
     Milliseconds("Milliseconds", 1),
@@ -12,15 +13,44 @@ enum class TargetMode { AtPointer, AtPoints }
 
 enum class LimitMode { UntilStopped, Clicks, Minutes, Passes }
 
-/** One point in the list: where, how long to wait before its click (after the previous click), and which button. */
+/**
+ * One step in the list: its name, where it clicks, how long it waits before its click (after the
+ * previous click) in a unit of the user's choosing, and which button.
+ */
 data class PointDraft(
     val x: String = "",
     val y: String = "",
-    val delayMillis: String = DEFAULT_POINT_DELAY_MILLIS.toString(),
+    val delay: String = "1",
+    val delayUnit: IntervalUnit = IntervalUnit.Seconds,
     val button: PointerButton = PointerButton.Left,
-)
+    val name: String = "",
+    /** Scroll and click only: click the button with [text] on the page instead of a spot on the screen. */
+    val byText: Boolean = false,
+    val text: String = "",
+) {
+    /** The wait in milliseconds; decimals are allowed, so "1.5" seconds is 1500. Null when it isn't a number. */
+    val delayMillis: Long?
+        get() = delay.trim().replace(',', '.').toDoubleOrNull()
+            ?.takeIf { it >= 0 && it.isFinite() }
+            ?.let { (it * delayUnit.millis).roundToLong() }
+}
 
 internal const val DEFAULT_POINT_DELAY_MILLIS = 1_000L
+private const val MAX_STEP_NAME_LENGTH = 40
+
+/** Button labels the extension matches are at most 40 characters; a little room for typing. */
+private const val MAX_BUTTON_TEXT_LENGTH = 60
+
+/** The name a step gets until the user gives it one. */
+fun defaultStepName(index: Int) = "Point ${index + 1}"
+
+/** Shows a wait in the largest unit that reads cleanly: 120000 as 2 minutes, 1500 as 1.5 seconds. */
+fun delayDraft(millis: Long): Pair<String, IntervalUnit> = when {
+    millis > 0 && millis % 60_000 == 0L -> (millis / 60_000).toString() to IntervalUnit.Minutes
+    millis > 0 && millis % 1_000 == 0L -> (millis / 1_000).toString() to IntervalUnit.Seconds
+    millis >= 1_000 && millis % 100 == 0L -> "${millis / 1_000}.${(millis % 1_000) / 100}" to IntervalUnit.Seconds
+    else -> millis.toString() to IntervalUnit.Milliseconds
+}
 
 /** What the editor shows: numbers stay text until saved, so half-typed values are never lost. */
 data class RoutineDraft(
@@ -76,11 +106,21 @@ fun Routine.toDraft(): RoutineDraft = when (this) {
     is ScrollClickRoutine -> RoutineDraft(
         kind = RoutineKind.ScrollClick,
         name = name,
-        points = listOf(PointDraft(point.x.toString(), point.y.toString())),
+        targetMode = TargetMode.AtPoints,
+        points = steps.mapIndexed { index, step ->
+            val (delay, unit) = delayDraft(step.delayMillis ?: 0)
+            val text = step.text?.takeIf { it.isNotBlank() }
+            PointDraft(
+                if (text == null) step.x.toString() else "", if (text == null) step.y.toString() else "",
+                delay, unit, step.button ?: PointerButton.Left, step.name ?: defaultStepName(index),
+                byText = text != null, text = text.orEmpty(),
+            )
+        },
         pixelsPerSecond = pixelsPerSecond,
         rounds = rounds.toString(),
         watchVideos = watchVideos,
     )
+    is CourseHelperRoutine -> RoutineDraft(kind = RoutineKind.CourseHelper, name = name, soundOnVideoEnd = soundOnVideoEnd)
     is PageHelperRoutine -> RoutineDraft(
         kind = RoutineKind.PageHelper,
         name = name,
@@ -98,8 +138,9 @@ fun ClickRoutine.toDraft(): RoutineDraft {
         name = name,
         targetMode = if (target is ClickTarget.AtPoints) TargetMode.AtPoints else TargetMode.AtPointer,
         // A point saved without its own wait or button shows the routine's, which is what it used.
-        points = (target as? ClickTarget.AtPoints)?.points.orEmpty().map {
-            PointDraft(it.x.toString(), it.y.toString(), (it.delayMillis ?: intervalMillis).toString(), it.button ?: button)
+        points = (target as? ClickTarget.AtPoints)?.points.orEmpty().mapIndexed { index, point ->
+            val (delay, unit) = delayDraft(point.delayMillis ?: intervalMillis)
+            PointDraft(point.x.toString(), point.y.toString(), delay, unit, point.button ?: button, point.name ?: defaultStepName(index))
         },
         button = button,
         doubleClick = clicksPerAction == 2,
@@ -125,8 +166,13 @@ fun RoutineDraft.validate(): DraftErrors = when (kind) {
     RoutineKind.ScrollClick -> DraftErrors(
         name = nameError(),
         points = when {
-            points.isEmpty() -> "Pick the spot to click."
-            points.first().x.coordinate() == null || points.first().y.coordinate() == null -> "The spot needs a whole-number X and Y."
+            points.isEmpty() -> "Add at least one step to click at the bottom."
+            points.any { it.byText && it.text.isBlank() } -> "Each button step needs the button's text."
+            points.any { it.byText && it.text.trim().length > MAX_BUTTON_TEXT_LENGTH } -> "Keep each button's text to $MAX_BUTTON_TEXT_LENGTH characters or fewer."
+            points.any { !it.byText && (it.x.coordinate() == null || it.y.coordinate() == null) } -> "Each step needs a whole-number X and Y."
+            // A step can click straight away here: reaching the bottom already took a while.
+            points.any { point -> point.delayMillis.let { it == null || it !in 0..MAX_INTERVAL_MILLIS } } -> "Each wait must be from 0 to 24 hours."
+            points.any { it.name.trim().length > MAX_STEP_NAME_LENGTH } -> "Keep each step's name to $MAX_STEP_NAME_LENGTH characters or fewer."
             else -> null
         },
         rounds = rounds.trim().toIntOrNull().let {
@@ -137,6 +183,7 @@ fun RoutineDraft.validate(): DraftErrors = when (kind) {
         name = nameError(),
         words = if (parseWords(words).isEmpty()) "Add at least one word." else null,
     )
+    RoutineKind.CourseHelper -> DraftErrors(name = nameError())
 }
 
 private fun RoutineDraft.nameError(): String? = when {
@@ -153,8 +200,9 @@ private fun RoutineDraft.validateClick(): DraftErrors {
             targetMode != TargetMode.AtPoints -> null
             points.isEmpty() -> "Add at least one point."
             points.any { it.x.coordinate() == null || it.y.coordinate() == null } -> "Each point needs a whole-number X and Y."
-            points.any { point -> point.delayMillis.trim().toLongOrNull().let { it == null || it !in MIN_INTERVAL_MILLIS..MAX_INTERVAL_MILLIS } } ->
+            points.any { point -> point.delayMillis.let { it == null || it !in MIN_INTERVAL_MILLIS..MAX_INTERVAL_MILLIS } } ->
                 "Each wait must be from $MIN_INTERVAL_MILLIS ms to 24 hours."
+            points.any { it.name.trim().length > MAX_STEP_NAME_LENGTH } -> "Keep each step's name to $MAX_STEP_NAME_LENGTH characters or fewer."
             else -> null
         },
         interval = when {
@@ -188,11 +236,19 @@ fun RoutineDraft.toRoutine(id: String): Routine = when (kind) {
     RoutineKind.ScrollClick -> ScrollClickRoutine(
         id = id,
         name = name.trim(),
-        point = points.first().let { ClickPoint(it.x.trim().toInt(), it.y.trim().toInt()) },
+        points = points.mapIndexed { index, point ->
+            val name = point.name.trim().ifEmpty { defaultStepName(index) }
+            if (point.byText) {
+                ClickPoint(0, 0, point.delayMillis, null, name, text = point.text.trim())
+            } else {
+                ClickPoint(point.x.trim().toInt(), point.y.trim().toInt(), point.delayMillis, point.button, name)
+            }
+        },
         rounds = rounds.trim().toInt(),
         pixelsPerSecond = pixelsPerSecond.coerceIn(MIN_PIXELS_PER_SECOND, MAX_PIXELS_PER_SECOND),
         watchVideos = watchVideos,
     )
+    RoutineKind.CourseHelper -> CourseHelperRoutine(id = id, name = name.trim(), soundOnVideoEnd = soundOnVideoEnd)
     RoutineKind.PageHelper -> PageHelperRoutine(
         id = id,
         name = name.trim(),
@@ -208,7 +264,11 @@ private fun RoutineDraft.toClickRoutine(id: String): ClickRoutine = ClickRoutine
     target = when (targetMode) {
         TargetMode.AtPointer -> ClickTarget.AtPointer
         TargetMode.AtPoints -> ClickTarget.AtPoints(
-            points.map { ClickPoint(it.x.trim().toInt(), it.y.trim().toInt(), it.delayMillis.trim().toLong(), it.button) },
+            points.mapIndexed { index, point ->
+                // A step left without a name gets its default one back.
+                val name = point.name.trim().ifEmpty { defaultStepName(index) }
+                ClickPoint(point.x.trim().toInt(), point.y.trim().toInt(), point.delayMillis, point.button, name)
+            },
         )
     },
     button = button,

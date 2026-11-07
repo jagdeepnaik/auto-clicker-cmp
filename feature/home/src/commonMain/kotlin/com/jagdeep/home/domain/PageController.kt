@@ -39,6 +39,9 @@ sealed interface PageActivity {
     data class Helper(override val routine: PageHelperRoutine, val clicks: Long = 0) : PageActivity
 
     data class ScrollClick(override val routine: ScrollClickRoutine, val progress: ScrollClickProgress) : PageActivity
+
+    /** The course helper is on; [clicks] counts the key presses that opened something. */
+    data class Course(override val routine: CourseHelperRoutine, val clicks: Long = 0) : PageActivity
 }
 
 data class PageState(
@@ -90,6 +93,11 @@ internal data class HelperCommand(
     /** The app clicks by itself in this mode, so the extension reports where the page is. */
     val autoRun: Boolean = false,
     val watchVideos: Boolean = false,
+    /** During a scroll and click run: the button text to click, once, for request [clickRequest]. */
+    val clickText: String? = null,
+    val clickRequest: Long = 0,
+    /** The course helper's highlighting and video start, on the course site only. */
+    val course: Boolean = false,
 )
 
 @Serializable
@@ -100,6 +108,7 @@ internal data class HelperEvent(
     val atBottom: Boolean = false,
     val signature: String? = null,
     val video: String? = null,
+    val request: Long? = null,
 )
 
 internal const val BROWSER_APP_NAME = "Google Chrome"
@@ -129,6 +138,24 @@ class PageController(
     private var job: Job? = null
     private var advance = 0L
     private var lastPublished: String? = null
+    private var textRequest = 0L
+    private var pendingText: String? = null
+    private val textClicks = object : TextClicker {
+        val done = MutableStateFlow(0L)
+        override val clicked: StateFlow<Long> = done
+        override fun request(text: String): Long {
+            textRequest++
+            pendingText = text
+            live.log(LiveSource.Routine) { "Looking for the button \"$text\"" }
+            publish()
+            return textRequest
+        }
+        override fun clear() {
+            if (pendingText == null) return
+            pendingText = null
+            publish()
+        }
+    }
 
     override val state: StateFlow<PageState> = mutableState.asStateFlow()
     override val lastRun: StateFlow<RunRecord?> = mutableLastRun.asStateFlow()
@@ -175,7 +202,11 @@ class PageController(
         if (!state.value.isConnected) return NOT_CONNECTED
         return when (routine) {
             is PageHelperRoutine -> {
-                launchActivity(PageActivity.Helper(routine), scrolling = false) { performHelper(routine) }
+                launchActivity(PageActivity.Helper(routine), scrolling = false) { performHandsOn(routine.name) }
+                null
+            }
+            is CourseHelperRoutine -> {
+                launchActivity(PageActivity.Course(routine), scrolling = false) { performHandsOn(routine.name) }
                 null
             }
             is ScrollClickRoutine -> {
@@ -207,7 +238,7 @@ class PageController(
                 live.log(LiveSource.Keys) { if (state.value.isScrolling) "Scroll key: scrolling on" else "Scroll key: scrolling off" }
                 publish()
             }
-            null -> Unit
+            is PageActivity.Course, null -> Unit
         }
     }
 
@@ -221,15 +252,20 @@ class PageController(
         }
     }
 
-    private suspend fun performHelper(routine: PageHelperRoutine) {
+    /** A routine that only acts on the user's key presses: it runs until stopped, then records its clicks. */
+    private suspend fun performHandsOn(name: String) {
         val startedAt = now()
         try {
             awaitCancellation()
         } finally {
             withContext(NonCancellable) {
-                val clicks = (state.value.activity as? PageActivity.Helper)?.clicks ?: 0
+                val clicks = when (val activity = state.value.activity) {
+                    is PageActivity.Helper -> activity.clicks
+                    is PageActivity.Course -> activity.clicks
+                    else -> 0
+                }
                 endActivity()
-                record(routine.name, startedAt, clicks, RunOutcome.StoppedByUser)
+                record(name, startedAt, clicks, RunOutcome.StoppedByUser)
             }
         }
     }
@@ -244,15 +280,16 @@ class PageController(
             live.log(LiveSource.App) { "Bringing $BROWSER_APP_NAME to the front" }
             automation.apps.bringToFront(BROWSER_APP_NAME)
             outcome = scrollClickRun.execute(
-                point = ScreenPoint(routine.point.x, routine.point.y),
+                steps = routine.steps,
                 rounds = routine.rounds,
                 safety = ScrollClickSafety(prefs.stopWhenPointerMoves, prefs.stopAtScreenCorner),
                 pages = pageReading,
                 setScrolling = ::setRunScrolling,
+                texts = textClicks,
                 onProgress = { progress ->
                     val previous = (state.value.activity as? PageActivity.ScrollClick)?.progress
                     if (progress.clicks > clicks) {
-                        live.log(LiveSource.Click) { "Clicked at ${routine.point.x}, ${routine.point.y} (round ${progress.round} of ${progress.rounds})" }
+                        live.log(LiveSource.Click) { "Clicked step ${progress.step} of ${progress.steps} (round ${progress.round} of ${progress.rounds})" }
                     }
                     if (previous == null || previous.phase != progress.phase || previous.round != progress.round) {
                         live.log(LiveSource.Routine) { "Round ${progress.round} of ${progress.rounds}: ${progress.phase.name}" }
@@ -293,7 +330,8 @@ class PageController(
     }
 
     private fun clickHighlighted() {
-        val helper = state.value.activity as? PageActivity.Helper ?: return
+        val activity = state.value.activity
+        if (activity !is PageActivity.Helper && activity !is PageActivity.Course) return
         val label = state.value.foundLabel
         if (label == null) {
             live.log(LiveSource.Keys) { "Click key: nothing highlighted, so no click" }
@@ -301,7 +339,15 @@ class PageController(
         }
         live.log(LiveSource.Keys) { "Click key: asking Chrome to click \"$label\"" }
         advance++
-        mutableState.update { it.copy(activity = helper.copy(clicks = helper.clicks + 1)) }
+        mutableState.update {
+            it.copy(
+                activity = when (activity) {
+                    is PageActivity.Helper -> activity.copy(clicks = activity.clicks + 1)
+                    is PageActivity.Course -> activity.copy(clicks = activity.clicks + 1)
+                    else -> activity
+                },
+            )
+        }
         publish()
     }
 
@@ -319,9 +365,14 @@ class PageController(
         when (event.type) {
             "found" -> mutableState.update { it.copy(foundLabel = event.label?.take(MAX_LABEL_LENGTH)) }
             "videoEnded" -> {
-                val helper = state.value.activity as? PageActivity.Helper
-                if (helper?.routine?.soundOnVideoEnd == true) automation.playAlert()
+                val wantsSound = when (val activity = state.value.activity) {
+                    is PageActivity.Helper -> activity.routine.soundOnVideoEnd
+                    is PageActivity.Course -> activity.routine.soundOnVideoEnd
+                    else -> false
+                }
+                if (wantsSound) automation.playAlert()
             }
+            "textClicked" -> if (event.request == textRequest) textClicks.done.value = textRequest
             "page" -> pageReading.value = PageReading(event.focused, event.atBottom, event.signature?.take(MAX_SIGNATURE_LENGTH), pageVideo(event.video))
         }
     }
@@ -341,12 +392,15 @@ class PageController(
             pixelsPerSecond = when (activity) {
                 is PageActivity.Helper -> activity.routine.pixelsPerSecond
                 is PageActivity.ScrollClick -> activity.routine.pixelsPerSecond
-                null -> DEFAULT_PIXELS_PER_SECOND
+                is PageActivity.Course, null -> DEFAULT_PIXELS_PER_SECOND
             },
             words = (activity as? PageActivity.Helper)?.routine?.words.orEmpty(),
             advance = advance,
             autoRun = activity is PageActivity.ScrollClick,
             watchVideos = (activity as? PageActivity.ScrollClick)?.routine?.watchVideos ?: false,
+            clickText = pendingText.takeIf { activity is PageActivity.ScrollClick },
+            clickRequest = textRequest,
+            course = activity is PageActivity.Course,
         )
         val encoded = json.encodeToString(HelperCommand.serializer(), command)
         if (encoded != lastPublished) live.log(LiveSource.Chrome) { "→ $encoded" }

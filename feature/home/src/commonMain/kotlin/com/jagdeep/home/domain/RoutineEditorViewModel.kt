@@ -51,7 +51,7 @@ class RoutineEditorViewModel(
             val library = repository.library.filterNotNull().first()
             val existing = routineId?.let { id -> library.routines.firstOrNull { it.id == id } }
             mutableState.update {
-                it.copy(isLoading = false, draft = existing?.toDraft() ?: newDraft(newKind, "Routine ${library.routines.size + 1}"))
+                it.copy(isLoading = false, draft = existing?.toDraft() ?: newDraft(newKind, defaultRoutineName(newKind, library.routines)))
             }
         }
         viewModelScope.launch { controller.preferences.collect { prefs -> mutableState.update { it.copy(captureHotKey = prefs.captureHotKey, pageClickHotKey = prefs.pageClickHotKey, pageScrollHotKey = prefs.pageScrollHotKey) } } }
@@ -77,10 +77,13 @@ class RoutineEditorViewModel(
         draft.copy(points = points)
     }
 
-    /** A new point starts with the routine's own timing and button, ready to change. */
+    /** A new step starts with the routine's own timing and button, and a name to change, such as "Point 3". */
     private fun newPoint(draft: RoutineDraft, x: String, y: String): PointDraft {
         val interval = draft.interval.trim().toLongOrNull()?.let { it * draft.intervalUnit.millis } ?: DEFAULT_POINT_DELAY_MILLIS
-        return PointDraft(x, y, interval.toString(), draft.button)
+        // In a scroll and click, the first step clicks once the page has settled at the bottom.
+        val wait = if (draft.kind == RoutineKind.ScrollClick && draft.points.isEmpty()) 0L else interval
+        val (delay, unit) = delayDraft(wait)
+        return PointDraft(x, y, delay, unit, draft.button, defaultStepName(draft.points.size))
     }
 
     fun updatePoint(index: Int, point: PointDraft) =
@@ -105,11 +108,6 @@ class RoutineEditorViewModel(
                         return@collect
                     }
                     val picked = newPoint(state.value.draft, point.x.toString(), point.y.toString())
-                    if (state.value.draft.kind == RoutineKind.ScrollClick) {
-                        updateDraft { it.copy(points = listOf(picked)) }
-                        finishCapture()
-                        return@collect
-                    }
                     updateDraft { it.copy(points = it.points + picked) }
                     mutableState.update { it.copy(capture = it.capture?.copy(added = it.capture.added + 1)) }
                 }
@@ -151,4 +149,13 @@ class RoutineEditorViewModel(
     private companion object {
         const val POINTER_REFRESH_MILLIS = 100L
     }
+}
+
+/**
+ * A new routine is named after its kind, numbered past any already using that name, so a second
+ * multi-point click is "Multi-point click 2" whatever else is in the list.
+ */
+internal fun defaultRoutineName(kind: RoutineKind, existing: List<Routine>): String {
+    val names = existing.map { it.name.trim().lowercase() }.toSet()
+    return generateSequence(1) { it + 1 }.map { "${kind.label} $it" }.first { it.lowercase() !in names }
 }

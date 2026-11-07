@@ -14,6 +14,7 @@ enum class RunOutcome(val label: String) {
     Failed("Stopped because a click couldn't be sent"),
     PageUnchanged("Stopped because the click didn't change the page"),
     BrowserDisconnected("Stopped because Chrome closed"),
+    ButtonNotFound("Stopped because a button wasn't found on the page"),
 }
 
 /** One finished run: written by Home and Page helper, shown by Activity. Holds no screen contents. */

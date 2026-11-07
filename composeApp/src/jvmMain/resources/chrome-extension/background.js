@@ -8,6 +8,8 @@ let command = null;
 let polling = false;
 let lastReported;
 let lastPage = null; // what the app last heard about the page being scrolled
+let handledTextRequest = 0; // the last "click the button with this text" request carried out
+let textClickInFlight = false;
 const frames = new Map(); // "tabId:frameId" -> { tabId, frameId, rank, label, area, at }
 
 const sleep = (millis) => new Promise((resolve) => setTimeout(resolve, millis));
@@ -28,6 +30,7 @@ async function pollApp() {
       command = null;
       lastReported = undefined;
       lastPage = null;
+      handledTextRequest = 0;
       version = -1;
       await sleep(3000);
     }
@@ -38,6 +41,8 @@ function applyCommand(next) {
   const previous = command;
   command = next;
   if (!next || !next.autoRun) lastPage = null;
+  // A restarted app counts its requests from the start again.
+  if (next && (next.clickRequest ?? 0) < handledTextRequest) handledTextRequest = 0;
   if (previous && next && next.advance > previous.advance) clickSelected();
 }
 
@@ -110,7 +115,11 @@ async function onTick(message, sender) {
   const frameId = sender.frameId ?? 0;
   const active = tabId !== undefined && tabId === (await activeTabId());
   if (!command || !command.enabled || !active) return { enabled: false };
-  frames.set(`${tabId}:${frameId}`, { tabId, frameId, rank: message.rank, label: message.label, area: message.area, video: message.video, content: message.reading?.content, at: Date.now() });
+  frames.set(`${tabId}:${frameId}`, {
+    tabId, frameId, rank: message.rank, label: message.label, area: message.area, video: message.video,
+    content: message.reading?.content, textRank: message.textRank ?? null, at: Date.now(),
+  });
+  clickTextIfFound(tabId);
   const selected = selectedFrame(tabId);
   const label = selected ? selected.label : null;
   if (label !== lastReported) {
@@ -126,9 +135,37 @@ async function onTick(message, sender) {
     scrolling: command.scrolling && scroller?.frameId === frameId && video === "none",
     autoRun: !!command.autoRun,
     watchVideos: !!command.watchVideos,
+    course: !!command.course,
     pixelsPerSecond: command.pixelsPerSecond,
     selected: selected?.frameId === frameId,
+    clickText: pendingText(),
   };
+}
+
+// The button text the app wants clicked now, during a scroll and click run.
+function pendingText() {
+  if (!command?.autoRun || !command.clickText || (command.clickRequest ?? 0) <= handledTextRequest) return null;
+  return command.clickText;
+}
+
+// Clicks the best match for the requested text, once per request, in whichever frame holds it.
+function clickTextIfFound(tabId) {
+  const text = pendingText();
+  if (!text || textClickInFlight) return;
+  const matches = frameEntries(tabId).filter((f) => f.textRank !== null);
+  matches.sort((a, b) => a.textRank - b.textRank || a.frameId - b.frameId);
+  const frame = matches[0];
+  if (!frame) return;
+  const request = command.clickRequest;
+  textClickInFlight = true;
+  chrome.tabs.sendMessage(tabId, { type: "clickText", text }, { frameId: frame.frameId })
+    .then((result) => {
+      if (!result?.clicked || request <= handledTextRequest) return;
+      handledTextRequest = request;
+      report({ type: "textClicked", request, label: result.clicked });
+    })
+    .catch(() => {})
+    .finally(() => { textClickInFlight = false; });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {

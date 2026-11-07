@@ -1,7 +1,7 @@
 package com.jagdeep.home.data
 
-import com.jagdeep.home.domain.CLICK_ROUTINE_TYPE
 import com.jagdeep.home.domain.ClickRoutine
+import com.jagdeep.home.domain.decodeRoutine
 import com.jagdeep.home.domain.Routine
 import com.jagdeep.home.domain.RoutineLibrary
 import com.jagdeep.home.domain.RoutineRepository
@@ -56,12 +56,7 @@ class PreferencesRoutineRepository(
     private fun decode(raw: String): RoutineData {
         if (raw.isBlank()) return firstLaunch()
         val root = runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull() ?: return firstLaunch()
-        val routines = (root["routines"] as? JsonArray).orEmpty().mapNotNull { element ->
-            val saved = element as? JsonObject ?: return@mapNotNull null
-            // Routines saved before there were types are all click routines.
-            val typed = if (TYPE_KEY in saved) saved else JsonObject(saved + (TYPE_KEY to JsonPrimitive(CLICK_ROUTINE_TYPE)))
-            runCatching { json.decodeFromJsonElement(Routine.serializer(), typed) }.getOrNull()
-        }
+        val routines = (root["routines"] as? JsonArray).orEmpty().mapNotNull { decodeRoutine(it, json) }
         return RoutineData(routines, (root["selectedId"] as? JsonPrimitive)?.contentOrNull)
     }
 
@@ -77,7 +72,6 @@ class PreferencesRoutineRepository(
 
     private companion object {
         const val FIRST_ROUTINE_ID = "routine-first"
-        const val TYPE_KEY = "type"
         val json = Json { ignoreUnknownKeys = true }
     }
 }

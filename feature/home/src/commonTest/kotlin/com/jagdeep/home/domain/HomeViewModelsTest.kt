@@ -121,8 +121,16 @@ class HomeViewModelsTest {
         val viewModel = editor(FakeRoutineRepository(RoutineLibrary(listOf(first))))
         runCurrent()
         assertTrue(viewModel.state.value.isNew)
-        assertEquals("Routine 2", viewModel.state.value.draft.name)
+        assertEquals("Click routine 1", viewModel.state.value.draft.name)
         assertEquals(listOf("Finder", "Google Chrome"), viewModel.state.value.runningApps)
+    }
+
+    @Test
+    fun `given routines of a kind when a new one is named then it takes the kind's name and the next free number`() {
+        val existing = listOf(ClickRoutine("a", "Multi-point click 1"), ClickRoutine("b", "multi-point click 2"), PageHelperRoutine("c", "Web page helper 1"))
+        assertEquals("Multi-point click 3", defaultRoutineName(RoutineKind.Sequence, existing))
+        assertEquals("Scroll and click 1", defaultRoutineName(RoutineKind.ScrollClick, existing))
+        assertEquals("Web page helper 2", defaultRoutineName(RoutineKind.PageHelper, existing))
     }
 
     @Test
@@ -168,7 +176,7 @@ class HomeViewModelsTest {
         automation.position = ScreenPoint(30, 40)
         automation.keyPresses.emit(HotKey.F7)
         runCurrent()
-        assertEquals(listOf(PointDraft("10", "20"), PointDraft("30", "40")), viewModel.state.value.draft.points)
+        assertEquals(listOf(PointDraft("10", "20", name = "Point 1"), PointDraft("30", "40", name = "Point 2")), viewModel.state.value.draft.points)
         assertEquals(2, viewModel.state.value.capture?.added)
 
         advanceTimeBy(101)
@@ -183,24 +191,28 @@ class HomeViewModelsTest {
     }
 
     @Test
-    fun `given a new scroll and click routine when a spot is picked then it replaces the spot and picking ends`() = test {
+    fun `given a new scroll and click routine when steps are picked then each is added, the first clicking at once`() = test {
         val repository = FakeRoutineRepository(RoutineLibrary())
         val viewModel = RoutineEditorViewModel(null, controller(repository), repository, newId = { "new-id" }, newKind = RoutineKind.ScrollClick)
         runCurrent()
         assertEquals(RoutineKind.ScrollClick, viewModel.state.value.draft.kind)
-        repeat(2) { attempt ->
-            viewModel.startCapture()
-            runCurrent()
-            automation.position = ScreenPoint(10 + attempt, 20)
+        viewModel.startCapture()
+        runCurrent()
+        listOf(ScreenPoint(10, 20), ScreenPoint(11, 20)).forEach {
+            automation.position = it
             automation.keyPresses.emit(HotKey.F7)
             runCurrent()
         }
-        assertEquals(listOf(PointDraft("11", "20")), viewModel.state.value.draft.points)
-        assertNull(viewModel.state.value.capture)
+        viewModel.finishCapture()
+        assertEquals(
+            listOf(PointDraft("10", "20", "0", IntervalUnit.Milliseconds, name = "Point 1"), PointDraft("11", "20", name = "Point 2")),
+            viewModel.state.value.draft.points,
+        )
 
         viewModel.save()
         runCurrent()
-        assertEquals(ScrollClickRoutine("new-id", "Routine 1", ClickPoint(11, 20)), repository.library.value!!.routines.single())
+        val saved = repository.library.value!!.routines.single() as ScrollClickRoutine
+        assertEquals(listOf(ClickPoint(10, 20, 0, com.jagdeep.automation.PointerButton.Left, "Point 1"), ClickPoint(11, 20, 1_000, com.jagdeep.automation.PointerButton.Left, "Point 2")), saved.steps)
     }
 
     @Test
@@ -254,7 +266,7 @@ class HomeViewModelsTest {
         runCurrent()
         viewModel.updateDraft { it.copy(interval = "2", intervalUnit = IntervalUnit.Seconds, button = com.jagdeep.automation.PointerButton.Right) }
         viewModel.addEmptyPoint()
-        assertEquals(PointDraft("", "", "2000", com.jagdeep.automation.PointerButton.Right), viewModel.state.value.draft.points.single())
+        assertEquals(PointDraft("", "", "2", IntervalUnit.Seconds, com.jagdeep.automation.PointerButton.Right, "Point 1"), viewModel.state.value.draft.points.single())
     }
 
     @Test
@@ -264,7 +276,7 @@ class HomeViewModelsTest {
         viewModel.addEmptyPoint()
         viewModel.addEmptyPoint()
         viewModel.updatePoint(1, PointDraft("5", "6"))
-        assertEquals(listOf(PointDraft(), PointDraft("5", "6")), viewModel.state.value.draft.points)
+        assertEquals(listOf(PointDraft(name = "Point 1"), PointDraft("5", "6")), viewModel.state.value.draft.points)
         viewModel.removePoint(0)
         assertEquals(listOf(PointDraft("5", "6")), viewModel.state.value.draft.points)
     }

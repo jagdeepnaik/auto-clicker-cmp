@@ -67,6 +67,7 @@ internal fun RunPanel(
     val (icon, tint) = statusAppearance(state, access)
     val title = when {
         activity is PageActivity.Helper -> "Web page helper on"
+        activity is PageActivity.Course -> "Course helper on"
         activity is PageActivity.ScrollClick -> "Round ${activity.progress.round} of ${activity.progress.rounds}"
         run is RunState.CountingDown -> "Starting in ${run.secondsLeft}…"
         run is RunState.Running -> if (run.pause != null) "Paused" else "Clicking"
@@ -88,6 +89,11 @@ internal fun RunPanel(
             if (page.isScrolling) append(" Scrolling.")
         }
         activity is PageActivity.ScrollClick -> "${activity.routine.name} · ${scrollClickDetail(activity.progress)}"
+        activity is PageActivity.Course -> when {
+            !page.isConnected -> "Waiting for Chrome. The extension steps are in Settings."
+            page.foundLabel != null -> "Next: ${page.foundLabel}. Press ${state.pageClickHotKey.name} to open it."
+            else -> "Open sagarmeinyog.com in Chrome. The next course or part to watch is highlighted there."
+        }
         run is RunState.CountingDown -> "Move to the target now. ${run.routine.name} starts soon."
         run is RunState.Running -> buildString {
             append(run.routine.name).append(" · ").append(clicksLabel(run.clicks))

@@ -3,6 +3,7 @@ package com.jagdeep.home.ui.util
 import com.jagdeep.automation.PointerButton
 import com.jagdeep.home.domain.ClickRoutine
 import com.jagdeep.home.domain.ClickTarget
+import com.jagdeep.home.domain.CourseHelperRoutine
 import com.jagdeep.home.domain.PageHelperRoutine
 import com.jagdeep.home.domain.PauseReason
 import com.jagdeep.home.domain.Routine
@@ -16,11 +17,13 @@ import com.jagdeep.shared.history.RunRecord
 internal fun routineSummary(routine: Routine): String = "${routine.kind.label} · " + when (routine) {
     is ClickRoutine -> clickSummary(routine)
     is ScrollClickRoutine -> buildList {
-        add("at ${routine.point.x}, ${routine.point.y}")
+        val steps = routine.steps
+        add(if (steps.size == 1) "at ${steps.first().x}, ${steps.first().y}" else "${steps.size} steps")
         add(if (routine.rounds == 1) "1 round" else "${routine.rounds} rounds")
         if (routine.watchVideos) add("stops for videos")
     }.joinToString(" · ")
     is PageHelperRoutine -> routine.words.joinToString(", ")
+    is CourseHelperRoutine -> "sagarmeinyog.com · one key press opens each part"
 }
 
 /** "Left click every 1 s · at the pointer · in Google Chrome", or "3 points, top to bottom · once". */
@@ -74,6 +77,7 @@ internal fun scrollClickDetail(progress: ScrollClickProgress): String = when (pr
     ScrollClickPhase.WatchingVideo -> "Playing a video. It carries on when the video ends."
     ScrollClickPhase.VideoNeedsPlay -> "Press play on the video in Chrome. It carries on when the video ends."
     ScrollClickPhase.AtBottom -> "Reached the bottom. Clicking soon."
+    ScrollClickPhase.ClickingSteps -> "At the bottom: step ${progress.step} of ${progress.steps}. ${clicksLabel(progress.clicks)} so far."
     ScrollClickPhase.WaitingForPage -> "Clicked. Waiting for the page to change. ${clicksLabel(progress.clicks)} so far."
 }
 

@@ -46,7 +46,12 @@ class LiveChromeExtensionTest {
           },
           tabs: {
             query: async () => [{ id: 1 }],
-            sendMessage: async (tabId, message) => { for (const l of listeners) l(message, {}, () => {}); },
+            // Like Chrome, resolves with the receiving frame's reply.
+            sendMessage: (tabId, message) => new Promise((resolve) => {
+              let answered = false;
+              for (const l of listeners) l(message, {}, (reply) => { answered = true; resolve(reply); });
+              if (!answered) resolve(undefined);
+            }),
           },
           windows: { WINDOW_ID_NONE: -1, getLastFocused: async () => ({ focused: true }), onFocusChanged: { addListener() {} } },
           alarms: { create() {}, onAlarm: { addListener() {} } },
@@ -225,7 +230,135 @@ class LiveChromeExtensionTest {
             waitFor("the signature to change with the other frame") { signatures().size >= 2 }
         }
 
-    private fun videoRun(page: String, checks: (ConcurrentLinkedQueue<String>, ConcurrentLinkedQueue<String>) -> Unit) {
+    /** "Back to Course" appears only after a while, as after a video ends; it reports each press. */
+    private val lateButtonPage = """
+        <!doctype html><html><body><p>Lesson</p>
+        <script src="/stub.js"></script><script src="/background.js"></script><script src="/content.js"></script>
+        <script>
+          setTimeout(() => {
+            const button = document.createElement('button');
+            button.textContent = 'Back to Course';
+            button.onclick = () => fetch('/report?what=back-pressed');
+            document.body.append(button);
+          }, 2500);
+        </script>
+        </body></html>
+    """.trimIndent()
+
+    @Test
+    fun `given a button step in Chrome when its button appears late then it's clicked exactly once and reported`() =
+        videoRun(
+            lateButtonPage,
+            command = """{"enabled":true,"scrolling":false,"pixelsPerSecond":60,"words":[],"advance":0,"autoRun":true,"watchVideos":true,"clickText":"Back to Course","clickRequest":1}""",
+        ) { reports, incoming ->
+            waitFor("the button to be pressed") { "back-pressed" in reports }
+            waitFor("the app to hear it") { incoming.any { "\"type\":\"textClicked\"" in it && "\"request\":1" in it } }
+            Thread.sleep(2_000)
+            assertEquals(1, reports.count { it == "back-pressed" }, "One request is one press")
+        }
+
+    /** A course page shaped like the site's: one part finished, the next not started, each with Watch video. */
+    private val coursePage = """
+        <!doctype html><html><body>
+        <div style="height:120px;width:300px;background:#ccc" role="button" class="course-cover-play" onclick="fetch('/report?what=cover-pressed')"><span class="play-icon">Play</span></div>
+        <button onclick="fetch('/report?what=assessment-pressed')">Assessment</button>
+        <div class="row"><span>1.1</span><span>Part:1</span><span>VIDEO</span><span>Completed</span><button onclick="fetch('/report?what=part1-pressed')">Watch video</button></div>
+        <div class="row"><span>1.2</span><span>Part:2</span><span>VIDEO</span><span>Not Started</span><button id="p2" onclick="fetch('/report?what=part2-pressed')">Watch video</button></div>
+        <script>setInterval(() => { if (document.getElementById('p2').style.outlineStyle === 'solid') fetch('/report?what=part2-highlighted'); }, 300);</script>
+        <script src="/stub.js"></script><script src="/background.js"></script><script src="/content.js"></script>
+        </body></html>
+    """.trimIndent()
+
+    /** A lesson: a real video element (played by stand-in), then the site's end panel. */
+    private val lessonPage = """
+        <!doctype html><html><body>
+        <video id="v" style="width:300px;height:150px;display:block"></video>
+        <div id="panel"></div>
+        <script>
+          const notifyTest = (what) => fetch('/report?what=' + what);
+          const v = document.getElementById('v');
+          let paused = true, ended = false;
+          Object.defineProperty(v, 'paused', { get: () => paused });
+          Object.defineProperty(v, 'ended', { get: () => ended });
+          v.play = () => {
+            notifyTest('video-play');
+            paused = false;
+            setTimeout(() => {
+              paused = true; ended = true;
+              document.getElementById('panel').innerHTML =
+                '<button id="quiz" onclick="notifyTest(\'quiz-pressed\')">Skip Quiz</button><button id="back" onclick="notifyTest(\'back-pressed\')">Back to Course</button>';
+            }, 2500);
+            return Promise.resolve();
+          };
+          setInterval(() => {
+            const back = document.getElementById('back'), quiz = document.getElementById('quiz');
+            if (back && back.style.outlineStyle === 'solid') notifyTest('back-highlighted');
+            if (quiz && quiz.style.outlineStyle === 'solid') notifyTest('quiz-highlighted');
+          }, 300);
+        </script>
+        <script src="/stub.js"></script><script src="/background.js"></script><script src="/content.js"></script>
+        </body></html>
+    """.trimIndent()
+
+    /** The dashboard's grid: a finished course, then one not finished, each with a cover and a round play button. */
+    private val dashboardPage = """
+        <!doctype html><html><body>
+        <div class="card">
+          <div class="cover" onclick="fetch('/report?what=cover1-pressed')" style="height:60px;width:200px;background:#ccc"></div>
+          <h3>Emotional Wellness</h3><span>Completed</span><span>75%</span><span>Min. Pass %</span><span>96min</span><span>Duration</span>
+          <button onclick="fetch('/report?what=course1-pressed')"><svg width="20" height="20"><circle cx="10" cy="10" r="8"/></svg></button>
+        </div>
+        <div class="card">
+          <div class="cover" onclick="fetch('/report?what=cover2-pressed')" style="height:60px;width:200px;background:#ccc"></div>
+          <h3>Economic Wellness</h3><span>75%</span><span>Min. Pass %</span><span>71min</span><span>Duration</span>
+          <button id="play2" onclick="fetch('/report?what=course2-pressed')"><svg width="20" height="20"><circle cx="10" cy="10" r="8"/></svg></button>
+        </div>
+        <script>setInterval(() => { if (document.getElementById('play2').style.outlineStyle === 'solid') fetch('/report?what=course2-highlighted'); }, 300);</script>
+        <script src="/stub.js"></script><script src="/background.js"></script><script src="/content.js"></script>
+        </body></html>
+    """.trimIndent()
+
+    @Test
+    fun `given the course helper on the dashboard in Chrome then the next unfinished course's play button is highlighted and nothing is clicked`() =
+        videoRun(dashboardPage, command = courseCommand, path = "/dashboard") { reports, incoming ->
+            waitFor("the next course to be highlighted") { "course2-highlighted" in reports }
+            waitFor("the app to hear its name") { incoming.any { "\"label\":\"Open Economic Wellness\"" in it } }
+            Thread.sleep(1_500)
+            listOf("course1-pressed", "course2-pressed", "cover1-pressed", "cover2-pressed").forEach {
+                assertFalse(it in reports, "Nothing is clicked without a key press: $it")
+            }
+        }
+
+    private val courseCommand = """{"enabled":true,"scrolling":false,"pixelsPerSecond":60,"words":[],"advance":0,"course":true}"""
+
+    @Test
+    fun `given the course helper on a course page in Chrome then the next unfinished part is highlighted and nothing is clicked`() =
+        videoRun(coursePage, command = courseCommand, path = "/dashboard/courses/abc") { reports, incoming ->
+            waitFor("the next part to be highlighted") { "part2-highlighted" in reports }
+            waitFor("the app to hear it") { incoming.any { "\"label\":\"1.2 Part:2\"" in it } }
+            Thread.sleep(1_500)
+            listOf("part1-pressed", "part2-pressed", "cover-pressed", "assessment-pressed").forEach {
+                assertFalse(it in reports, "Nothing is clicked without a key press: $it")
+            }
+        }
+
+    @Test
+    fun `given the course helper on a lesson in Chrome then its video starts, and Back to Course, never the quiz, is highlighted after`() =
+        videoRun(lessonPage, command = courseCommand, path = "/dashboard/courses/abc/def") { reports, _ ->
+            waitFor("the video to start by itself") { "video-play" in reports }
+            waitFor("Back to Course to be highlighted") { "back-highlighted" in reports }
+            Thread.sleep(1_000)
+            assertFalse("quiz-highlighted" in reports, "A quiz is never highlighted")
+            assertFalse("back-pressed" in reports || "quiz-pressed" in reports, "Nothing is clicked without a key press")
+            assertEquals(1, reports.count { it == "video-play" })
+        }
+
+    private fun videoRun(
+        page: String,
+        path: String = "/",
+        command: String = """{"enabled":true,"scrolling":true,"pixelsPerSecond":2000,"words":[],"advance":0,"autoRun":true,"watchVideos":true}""",
+        checks: (ConcurrentLinkedQueue<String>, ConcurrentLinkedQueue<String>) -> Unit,
+    ) {
         if (chrome == null) return
         val reports = ConcurrentLinkedQueue<String>()
         val linkPort = ServerSocket(0).use { it.localPort }
@@ -245,9 +378,9 @@ class LiveChromeExtensionTest {
         val incoming = ConcurrentLinkedQueue<String>()
         val scope = CoroutineScope(Dispatchers.Default)
         scope.launch { bridge.incoming.collect { incoming += it } }
-        bridge.publish("""{"enabled":true,"scrolling":true,"pixelsPerSecond":2000,"words":[],"advance":0,"autoRun":true,"watchVideos":true}""")
+        bridge.publish(command)
         val profile = Files.createTempDirectory("autoclicker-chrome").toFile()
-        val process = ProcessBuilder(chrome, "--headless=new", "--no-first-run", "--user-data-dir=${profile.absolutePath}", "http://127.0.0.1:${server.address.port}/")
+        val process = ProcessBuilder(chrome, "--headless=new", "--no-first-run", "--user-data-dir=${profile.absolutePath}", "http://127.0.0.1:${server.address.port}$path")
             .redirectErrorStream(true).redirectOutput(File(profile, "chrome.log")).start()
         try {
             checks(reports, incoming)

@@ -17,10 +17,11 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdsClick
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FormatListNumbered
-import androidx.compose.material.icons.filled.TravelExplore
-import androidx.compose.material.icons.filled.VerticalAlignBottom
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.IosShare
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.LaunchedEffect
+import com.jagdeep.ui.components.LocalToastManager
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
@@ -49,12 +50,12 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.jagdeep.common.config.AppConfig
 import com.jagdeep.home.domain.HomeUiState
 import com.jagdeep.home.domain.HomeViewModel
 import com.jagdeep.home.domain.Routine
 import com.jagdeep.home.domain.RoutineKind
 import com.jagdeep.home.ui.components.RunPanel
+import com.jagdeep.home.ui.util.icon
 import com.jagdeep.home.ui.util.routineSummary
 import com.jagdeep.ui.components.AppBarTop
 import com.jagdeep.ui.components.LocalTopAppBarManager
@@ -70,6 +71,8 @@ fun HomeScreen(
     onEditRoutine: (Routine) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
+    val toast = LocalToastManager.current
+    LaunchedEffect(viewModel) { viewModel.messages.collect { toast.show(it) } }
     // Only which dialog is open: nothing typed or sensitive, so it can be ordinary UI state.
     var choosingKind by remember { mutableStateOf(false) }
     if (choosingKind) {
@@ -84,7 +87,7 @@ fun HomeScreen(
     val topBarManager = LocalTopAppBarManager.current
     SideEffect {
         topBarManager.value = TopAppBarState(RouteTopLevel.Home) {
-            AppBarTop(AppConfig.APP_NAME, RouteTopLevel.Home, {}, {}, {}, titleIcon = appIcon)
+            AppBarTop("Home", RouteTopLevel.Home, {}, {}, {}, titleIcon = appIcon)
         }
     }
     state.routinePendingDeletion?.let { routine ->
@@ -108,7 +111,7 @@ fun HomeScreen(
             RunPanel(state, viewModel::start, viewModel::stop, viewModel::requestAccess, viewModel::toggleScrolling)
             HorizontalDivider(Modifier.padding(horizontal = 16.dp))
             if (state.routines.isEmpty()) {
-                EmptyRoutines { choosingKind = true }
+                EmptyRoutines(onNewRoutine = { choosingKind = true }, onImport = viewModel::import.takeIf { state.canUseFiles })
             } else {
                 RoutineList(state, viewModel, { choosingKind = true }, onEditRoutine)
             }
@@ -144,6 +147,11 @@ private fun RoutineList(
                 supportingContent = { Text(routineSummary(routine)) },
                 trailingContent = {
                     Row {
+                        if (state.canUseFiles) {
+                            IconButton(onClick = { viewModel.export(routine) }) {
+                                Icon(Icons.Default.IosShare, contentDescription = "Export ${routine.name}")
+                            }
+                        }
                         IconButton(onClick = { onEditRoutine(routine) }, enabled = editable) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit ${routine.name}")
                         }
@@ -155,16 +163,25 @@ private fun RoutineList(
             )
         }
         item {
-            FilledTonalButton(onClick = onNewRoutine, modifier = Modifier.padding(16.dp)) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("New routine", Modifier.padding(start = 8.dp))
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalButton(onClick = onNewRoutine) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("New routine", Modifier.padding(start = 8.dp))
+                }
+                if (state.canUseFiles) {
+                    OutlinedButton(onClick = viewModel::import) {
+                        Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Import", Modifier.padding(start = 8.dp))
+                    }
+                    TextButton(onClick = viewModel::exportAll) { Text("Export all") }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun EmptyRoutines(onNewRoutine: () -> Unit) {
+private fun EmptyRoutines(onNewRoutine: () -> Unit, onImport: (() -> Unit)?) {
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(Modifier.widthIn(max = 420.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(Icons.Default.AdsClick, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
@@ -174,9 +191,17 @@ private fun EmptyRoutines(onNewRoutine: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            FilledTonalButton(onClick = onNewRoutine) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("New routine", Modifier.padding(start = 8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilledTonalButton(onClick = onNewRoutine) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("New routine", Modifier.padding(start = 8.dp))
+                }
+                onImport?.let {
+                    OutlinedButton(onClick = it) {
+                        Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Import", Modifier.padding(start = 8.dp))
+                    }
+                }
             }
         }
     }
@@ -203,11 +228,4 @@ private fun KindChooser(onChoose: (RoutineKind) -> Unit, onDismiss: () -> Unit) 
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
-}
-
-private fun RoutineKind.icon(): ImageVector = when (this) {
-    RoutineKind.Click -> Icons.Default.AdsClick
-    RoutineKind.Sequence -> Icons.Default.FormatListNumbered
-    RoutineKind.ScrollClick -> Icons.Default.VerticalAlignBottom
-    RoutineKind.PageHelper -> Icons.Default.TravelExplore
 }

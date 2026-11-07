@@ -1,6 +1,7 @@
 // Runs in each frame. Finds the next-step button, highlights it, scrolls, and notices videos ending.
 // It clicks only when told to after a key press, and skips anything disabled.
-// During a scroll and click run it also reports whether the page has reached the bottom, and starts
+// During a scroll and click run it also reports whether the page has reached the bottom, clicks a
+// button by its text when the app asks (each request once), and starts
 // each video it reaches, pressing its play button if it has one. That's the only click a page gets
 // here without a key press, and only in a run the user started. Videos play as the page set them:
 // never faster, and never skipped ahead.
@@ -158,7 +159,110 @@
   }
 
   function isWatchingVideos() {
-    return settings.enabled && settings.autoRun && settings.watchVideos;
+    return settings.enabled && ((settings.autoRun && settings.watchVideos) || (settings.course && courseKind() === "lesson"));
+  }
+
+  // Course helper: only on the Sagar Mein Yog course site (and this computer's own test pages).
+  const COURSE_SITE = /(^|\.)sagarmeinyog\.com$/;
+
+  // "dashboard" on the list of courses, "course" on a course's page of parts, "lesson" on a part
+  // being watched, otherwise null.
+  function courseKind() {
+    if (!COURSE_SITE.test(location.hostname) && location.hostname !== "127.0.0.1") return null;
+    const parts = location.pathname.split("/").filter(Boolean);
+    if (parts[0] !== "dashboard") return null;
+    if (parts.length === 1 || (parts.length === 2 && parts[1] === "courses")) return "dashboard";
+    if (parts[1] !== "courses") return null;
+    if (parts.length === 3) return "course";
+    return parts.length >= 4 ? "lesson" : null;
+  }
+
+  // A course card: the nearest container showing the course's pass mark and duration.
+  function cardOf(element) {
+    let node = element;
+    for (let i = 0; i < 8 && node; i++) {
+      const text = node.innerText || "";
+      if (/min\.?\s*pass/i.test(text) && /duration/i.test(text)) return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function looksLikePlay(element) {
+    const text = [element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("class"), element.id].filter(Boolean).join(" ");
+    return /play/i.test(text) || (!labelOf(element) && element.querySelector("svg") !== null);
+  }
+
+  // The next course card that doesn't show as completed; its play button, else whatever on it opens it.
+  function findNextCourse(roots) {
+    const cards = new Map();
+    for (const root of roots) {
+      for (const element of root.querySelectorAll(CLICKABLE)) {
+        if (!isUsable(element)) continue;
+        const card = cardOf(element);
+        if (!card) continue;
+        if (!cards.has(card)) cards.set(card, []);
+        cards.get(card).push(element);
+      }
+    }
+    for (const [card, controls] of cards) {
+      if (isDone(card.innerText || "")) continue;
+      const element = controls.find(looksLikePlay) || controls[controls.length - 1];
+      const title = card.querySelector("h1, h2, h3, h4");
+      const name = (title ? title.textContent : "").replace(/\s+/g, " ").trim();
+      return { element, label: ("Open " + (name || "the next course")).slice(0, MAX_LABEL_LENGTH), rank: 0 };
+    }
+    return null;
+  }
+
+  // The part's row: the nearest container that also shows its status.
+  function rowOf(element) {
+    let node = element;
+    for (let i = 0; i < 6 && node.parentElement; i++) {
+      node = node.parentElement;
+      if (/not started|in progress|completed/i.test(node.innerText || "")) return node;
+    }
+    return null;
+  }
+
+  // Pages often run a row's cells together ("VIDEOCompletedWatch video"), so no word breaks are relied on.
+  function isDone(text) {
+    return /completed/i.test(text) && !/not started|in progress|not completed|incomplete/i.test(text);
+  }
+
+  // A part's name from its first two cells, such as "1.2 Part:2".
+  function partLabel(container, fallback) {
+    if (!container) return fallback;
+    const cells = [...container.querySelectorAll("*")]
+      .filter((element) => element.children.length === 0)
+      .map((element) => (element.textContent || "").replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+    return (cells.slice(0, 2).join(" ") || fallback).slice(0, MAX_LABEL_LENGTH);
+  }
+
+  // What the next key press should open: never a quiz or an assessment.
+  function findCourseTarget(roots) {
+    const kind = courseKind();
+    if (kind === "course") {
+      for (const root of roots) {
+        for (const element of root.querySelectorAll(CLICKABLE)) {
+          if (!/^watch video$/i.test(labelOf(element)) || !isUsable(element)) continue;
+          const row = rowOf(element);
+          if (!isDone(row ? row.innerText : "")) return { element, label: partLabel(row, "Next part"), rank: 0 };
+        }
+      }
+      // The next part may sit in a closed chapter; its header opens it.
+      for (const root of roots) {
+        for (const element of root.querySelectorAll('[aria-expanded="false"]')) {
+          if (!isUsable(element) || isDone(element.innerText || "")) continue;
+          return { element, label: ("Open " + partLabel(element, "the next chapter")).slice(0, MAX_LABEL_LENGTH), rank: 1 };
+        }
+      }
+      return null;
+    }
+    if (kind === "lesson") return findButton(["Back to Course"], roots);
+    if (kind === "dashboard") return findNextCourse(roots);
+    return null;
   }
 
   // Looping or silent autoplaying videos are decoration, and a live stream never ends.
@@ -215,6 +319,7 @@
   // "playing", "needsPlay" or "none". Once started, a pause is left alone: it's the viewer's choice.
   function checkVideos(roots) {
     if (!isWatchingVideos()) return "none";
+    const course = settings.course;
     let needsPlay = false;
     for (const root of roots) {
       for (const video of root.querySelectorAll("video")) {
@@ -232,6 +337,8 @@
       }
     }
     if (needsPlay) return "needsPlay";
+    // The course helper only starts real videos: a play button is pressed by the user's own key.
+    if (course) return "none";
     // Holds the page while the player loads. A control that starts nothing doesn't hold it for long.
     if (Date.now() - playControlPressedAt < PLAY_CONTROL_WAIT_MILLIS) return "playing";
     return pressPlayControl(roots) ? "playing" : "none";
@@ -294,19 +401,21 @@
     let area = 0;
     let reading = null;
     let video = "none";
+    let textMatch = null;
     if (settings.enabled) {
       const roots = allRoots();
-      found = findButton(settings.words || [], roots);
+      found = settings.course ? findCourseTarget(roots) : findButton(settings.words || [], roots);
       watchVideos(roots);
       const scroll = findScroller();
       scroller = scroll.element;
       area = scroll.area;
       if (settings.autoRun) reading = readPage();
       video = checkVideos(roots);
+      if (settings.clickText) textMatch = findButton([settings.clickText], roots);
     }
     let response;
     try {
-      response = await chrome.runtime.sendMessage({ type: "tick", rank: found ? found.rank : null, label: found ? found.label : null, area, reading, video });
+      response = await chrome.runtime.sendMessage({ type: "tick", rank: found ? found.rank : null, label: found ? found.label : null, area, reading, video, textRank: textMatch ? textMatch.rank : null });
     } catch {
       if (!chrome.runtime?.id) {
         clearHighlight();
@@ -325,7 +434,19 @@
     setTimeout(tick, settings.enabled ? ACTIVE_TICK_MILLIS : IDLE_TICK_MILLIS);
   }
 
-  chrome.runtime.onMessage.addListener((message) => {
+  chrome.runtime.onMessage.addListener((message, sender, respond) => {
+    if (message.type === "clickText") {
+      // Found again at the moment of clicking, so it's still there and still enabled.
+      const match = findButton([message.text], allRoots());
+      if (!match) {
+        respond({ clicked: null });
+        return;
+      }
+      match.element.scrollIntoView({ block: "center" });
+      match.element.click();
+      respond({ clicked: match.label });
+      return;
+    }
     if (message.type !== "click" || !chosen || !chosen.isConnected || !isUsable(chosen)) return;
     chosen.scrollIntoView({ block: "center" });
     chosen.click();

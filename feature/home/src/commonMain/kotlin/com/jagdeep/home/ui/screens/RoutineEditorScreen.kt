@@ -82,6 +82,7 @@ import com.jagdeep.home.domain.RoutineKind
 import com.jagdeep.home.domain.MAX_PIXELS_PER_SECOND
 import com.jagdeep.home.domain.MIN_PIXELS_PER_SECOND
 import com.jagdeep.home.domain.TargetMode
+import com.jagdeep.home.domain.defaultStepName
 import com.jagdeep.home.ui.navigation.RouteRoutineEditor
 import com.jagdeep.ui.components.AppBarTop
 import com.jagdeep.ui.components.LocalTopAppBarManager
@@ -120,6 +121,7 @@ fun RoutineEditorScreen(viewModel: RoutineEditorViewModel, onBack: () -> Unit) {
                 RoutineKind.Sequence -> SequenceSections(state, viewModel)
                 RoutineKind.ScrollClick -> ScrollClickSections(state, viewModel)
                 RoutineKind.PageHelper -> PageHelperSections(state, viewModel)
+                RoutineKind.CourseHelper -> CourseHelperSections(state, viewModel)
             }
 
             Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -166,11 +168,45 @@ private fun SequenceSections(state: RoutineEditorUiState, viewModel: RoutineEdit
     val draft = state.draft
     val errors = state.errors
     val update = viewModel::updateDraft
+    Group("Steps")
+    StepsEditor(
+        state, viewModel,
+        intro = "They run top to bottom. Each waits after the click before it; the first starts straight after the start delay.",
+        firstStepWait = { wait -> "on repeats, waits $wait after the last step" },
+        firstStepHint = "Used when the list repeats",
+    )
+
+    Group("Repeat")
+    RepeatEditor(draft, errors.limit, update)
+
+    Group("Every step")
+    DoubleClickRow(draft, update)
+    RandomExtraField(draft, errors.randomExtra, "Adds up to this much to each step's wait, so the timing varies. 0 keeps it exact.", update)
+
+    WhereItMayRun(state, viewModel)
+}
+
+/**
+ * The list of steps, each one sentence long until opened for editing, with buttons to pick more on
+ * screen or add one by hand. Shared by multi-point click and scroll and click.
+ */
+@Composable
+private fun StepsEditor(
+    state: RoutineEditorUiState,
+    viewModel: RoutineEditorViewModel,
+    intro: String,
+    /** How the first step's wait reads in its row. */
+    firstStepWait: (String) -> String,
+    /** The hint under the first step's Wait field. */
+    firstStepHint: String,
+    allowText: Boolean = false,
+) {
+    val draft = state.draft
+    val errors = state.errors
     // Which step is open for editing: only a position in the list, so ordinary UI state.
     var openStep by remember { mutableStateOf<Int?>(null) }
-    Group("Steps")
     Text(
-        "They run top to bottom. Each waits after the click before it; the first starts straight after the start delay.",
+        intro,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 16.dp),
@@ -181,6 +217,9 @@ private fun SequenceSections(state: RoutineEditorUiState, viewModel: RoutineEdit
             count = draft.points.size,
             step = step,
             isOpen = openStep == index,
+            firstStepWait = firstStepWait,
+            firstStepHint = firstStepHint,
+            allowText = allowText,
             onToggle = { openStep = if (openStep == index) null else index },
             onChange = { viewModel.updatePoint(index, it) },
             onMove = { by ->
@@ -215,15 +254,6 @@ private fun SequenceSections(state: RoutineEditorUiState, viewModel: RoutineEdit
             }
         }
     }
-
-    Group("Repeat")
-    RepeatEditor(draft, errors.limit, update)
-
-    Group("Every step")
-    DoubleClickRow(draft, update)
-    RandomExtraField(draft, errors.randomExtra, "Adds up to this much to each step's wait, so the timing varies. 0 keeps it exact.", update)
-
-    WhereItMayRun(state, viewModel)
 }
 
 @Composable
@@ -232,6 +262,10 @@ private fun StepRow(
     count: Int,
     step: PointDraft,
     isOpen: Boolean,
+    firstStepWait: (String) -> String,
+    firstStepHint: String,
+    /** Scroll and click: a step may click a button by its text instead of a spot. */
+    allowText: Boolean,
     onToggle: () -> Unit,
     onChange: (PointDraft) -> Unit,
     onMove: (Int) -> Unit,
@@ -241,18 +275,24 @@ private fun StepRow(
     val number = index + 1
     val colors = MaterialTheme.colorScheme
     val where = if (step.x.isBlank() || step.y.isBlank()) "spot not set" else "${step.x}, ${step.y}"
-    val wait = step.delayMillis.trim().toLongOrNull()?.let(::waitLabel) ?: "wait not set"
-    val waitText = if (index == 0) "on repeats, waits $wait after the last step" else "waits $wait"
+    val wait = step.delayMillis?.let(::waitLabel) ?: "wait not set"
+    val waitText = if (index == 0) firstStepWait(wait) else "waits $wait"
+    val title = step.name.trim().ifEmpty { defaultStepName(index) }
+    val action = if (allowText && step.byText) {
+        if (step.text.isBlank()) "Button text not set" else "Clicks \"${step.text.trim()}\""
+    } else {
+        "${step.button.name} click at $where"
+    }
     ListItem(
-        modifier = Modifier.clickable(onClickLabel = if (isOpen) "Close step $number" else "Edit step $number", onClick = onToggle),
+        modifier = Modifier.clickable(onClickLabel = if (isOpen) "Close $title" else "Edit $title", onClick = onToggle),
         colors = ListItemDefaults.colors(containerColor = if (isOpen) colors.surfaceContainerHigh else Color.Transparent),
         leadingContent = {
             Surface(Modifier.size(32.dp), shape = CircleShape, color = colors.primaryContainer, contentColor = colors.onPrimaryContainer) {
                 Box(contentAlignment = Alignment.Center) { Text("$number", style = MaterialTheme.typography.labelLarge) }
             }
         },
-        headlineContent = { Text("${step.button.name} click at $where") },
-        supportingContent = { Text(waitText) },
+        headlineContent = { Text(title) },
+        supportingContent = { Text("$action · $waitText") },
         trailingContent = {
             Row {
                 IconButton(onClick = { onMove(-1) }, enabled = index > 0) { Icon(Icons.Default.ArrowUpward, contentDescription = "Move step $number up") }
@@ -266,21 +306,56 @@ private fun StepRow(
             Modifier.background(colors.surfaceContainerHigh).padding(start = 72.dp, end = 16.dp, bottom = 12.dp).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
+                value = step.name,
+                onValueChange = { onChange(step.copy(name = it)) },
+                label = { Text("Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
                 NumberField(
-                    "Wait (ms)", step.delayMillis, null,
-                    supporting = if (index == 0) "Used when the list repeats" else "After step ${number - 1}",
-                    onChange = { onChange(step.copy(delayMillis = it)) },
-                    modifier = Modifier.weight(1.3f),
+                    "Wait", step.delay, null,
+                    supporting = if (index == 0) firstStepHint else "After the step above",
+                    onChange = { onChange(step.copy(delay = it)) },
+                    modifier = Modifier.weight(1f),
                 )
-                NumberField("X", step.x, null, onChange = { onChange(step.copy(x = it)) }, modifier = Modifier.weight(1f))
-                NumberField("Y", step.y, null, onChange = { onChange(step.copy(y = it)) }, modifier = Modifier.weight(1f))
+                IntervalUnitMenu(step.delayUnit, { unit -> onChange(step.copy(delayUnit = unit)) }, Modifier.weight(1f))
             }
-            ButtonChoice(step.button) { onChange(step.copy(button = it)) }
+            if (allowText) {
+                SingleChoiceSegmentedButtonRow(Modifier.widthIn(max = 420.dp).fillMaxWidth()) {
+                    listOf(false to "Spot on screen", true to "Button text").forEachIndexed { i, (byText, label) ->
+                        SegmentedButton(
+                            selected = step.byText == byText,
+                            onClick = { onChange(step.copy(byText = byText)) },
+                            shape = SegmentedButtonDefaults.itemShape(i, 2),
+                            label = { Text(label) },
+                        )
+                    }
+                }
+            }
+            if (allowText && step.byText) {
+                OutlinedTextField(
+                    value = step.text,
+                    onValueChange = { onChange(step.copy(text = it)) },
+                    label = { Text("Button text") },
+                    singleLine = true,
+                    supportingText = { Text("The label on the button or link, such as Back to Course. It waits up to 30 seconds for it to appear.") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    NumberField("X", step.x, null, onChange = { onChange(step.copy(x = it)) }, modifier = Modifier.weight(1f))
+                    NumberField("Y", step.y, null, onChange = { onChange(step.copy(y = it)) }, modifier = Modifier.weight(1f))
+                }
+                ButtonChoice(step.button) { onChange(step.copy(button = it)) }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onPickAgain) {
-                    Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Pick again", Modifier.padding(start = 8.dp))
+                if (!(allowText && step.byText)) {
+                    TextButton(onClick = onPickAgain) {
+                        Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("Pick again", Modifier.padding(start = 8.dp))
+                    }
                 }
                 TextButton(onClick = onRemove) {
                     Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp), tint = colors.error)
@@ -385,29 +460,14 @@ private fun WhereItMayRun(state: RoutineEditorUiState, viewModel: RoutineEditorV
 private fun ScrollClickSections(state: RoutineEditorUiState, viewModel: RoutineEditorViewModel) {
     val draft = state.draft
     val update = viewModel::updateDraft
-    Group("Spot to click at the bottom")
-    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        val spot = draft.points.firstOrNull()
-        Text(
-            if (spot == null) "No spot picked yet." else "Clicks at ${spot.x}, ${spot.y} on your screen.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        state.errors.points?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-        val capture = state.capture
-        if (capture != null) {
-            CaptureStatus(capture, state.captureHotKey, single = true, onDone = viewModel::finishCapture)
-        } else {
-            FilledTonalButton(onClick = { viewModel.startCapture() }) {
-                Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(if (spot == null) "Pick on screen" else "Pick again", Modifier.padding(start = 8.dp))
-            }
-        }
-        Text(
-            "Scroll to the bottom of the page first, so you can point at the button that goes to the next page. Keep the Chrome window where it is afterwards.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    Group("Steps at the bottom of each page")
+    StepsEditor(
+        state, viewModel,
+        intro = "Each step clicks a spot on the screen, or a button found by its text wherever it is on the page. For spots, scroll to the bottom first and pick each one in order, and keep the Chrome window where it is.",
+        firstStepWait = { wait -> "waits $wait once the page settles at the bottom" },
+        firstStepHint = "After the page settles at the bottom",
+        allowText = true,
+    )
 
     Group("Scrolling")
     SpeedSlider(draft.pixelsPerSecond) { value -> update { it.copy(pixelsPerSecond = value) } }
@@ -454,6 +514,28 @@ private fun PageHelperSections(state: RoutineEditorUiState, viewModel: RoutineEd
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 16.dp),
     )
+
+    Group("Video alerts")
+    ListItem(
+        modifier = Modifier.toggleable(value = draft.soundOnVideoEnd, role = Role.Switch, onValueChange = { value -> update { it.copy(soundOnVideoEnd = value) } }),
+        colors = transparent(),
+        headlineContent = { Text("Play a sound when a video ends") },
+        trailingContent = { Switch(checked = draft.soundOnVideoEnd, onCheckedChange = null) },
+    )
+}
+
+@Composable
+private fun CourseHelperSections(state: RoutineEditorUiState, viewModel: RoutineEditorViewModel) {
+    val draft = state.draft
+    val update = viewModel::updateDraft
+    Group("How it works")
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(
+            "On the sagarmeinyog.com dashboard, the next course you haven't finished is outlined; on a course page, the next part. Press ${state.pageClickHotKey.name} to open it.",
+            "Its video starts by itself, at the site's own speed. When it ends, Back to Course is outlined; press ${state.pageClickHotKey.name} again.",
+            "Nothing is clicked without your key press. Quizzes and the assessment are yours to do: they're never outlined.",
+        ).forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+    }
 
     Group("Video alerts")
     ListItem(

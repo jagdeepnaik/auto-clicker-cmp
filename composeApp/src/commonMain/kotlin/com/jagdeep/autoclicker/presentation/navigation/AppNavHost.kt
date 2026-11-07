@@ -15,6 +15,7 @@ import com.jagdeep.persistence.preferences.PreferencesStore
 import com.jagdeep.settings.ui.navigation.settingsEntryProvider
 import com.jagdeep.shared.history.RunHistoryStore
 import com.jagdeep.shared.live.LiveLog
+import com.jagdeep.home.domain.RoutineFiles
 import kotlinx.coroutines.flow.map
 import com.jagdeep.shared.preferences.AppPreferences
 import com.jagdeep.ui.navigation.NavigationState
@@ -34,6 +35,7 @@ fun AppNavHost(
     browserConnected: Flow<Boolean>,
     runHistory: RunHistoryStore,
     liveLog: LiveLog,
+    routineFiles: RoutineFiles,
     accessGate: InputAccessGate,
     appVersion: String,
     now: () -> Long,
@@ -42,7 +44,7 @@ fun AppNavHost(
     modifier: Modifier = Modifier,
 ) {
     val stacks = navigationState.rememberDecoratedStacks(entryProvider {
-        homeEntryProvider(navigator, controller, routineRepository, newId, appIcon)
+        homeEntryProvider(navigator, controller, routineRepository, newId, appIcon, routineFiles)
         activityEntryProvider(navigator, runHistory, now, liveLog, developerMode = preferencesStore.data.map { it.developerMode })
         settingsEntryProvider(navigator, preferencesStore, accessGate, appVersion, browserConnected, onInstallExtension = ::installBrowserExtension)
     })

@@ -11,6 +11,7 @@ enum class RoutineKind(val label: String, val description: String) {
     Sequence("Multi-point click", "Clicks a list of spots in order. Each has its own wait and button, and the list can run once or repeat."),
     ScrollClick("Scroll and click", "Scrolls a Chrome page to the bottom, plays any videos, clicks your spot, and repeats."),
     PageHelper("Web page helper", "Highlights the next button on a Chrome page. You press a key to click it."),
+    CourseHelper("Course helper", "For the Sagar Mein Yog course site: highlights the next part to watch and you press a key to open it. Videos start by themselves; quizzes are yours."),
 }
 
 /** Something the Routines page can save and run. Only one routine runs at a time. */
@@ -45,6 +46,13 @@ data class ClickPoint(
     val y: Int,
     val delayMillis: Long? = null,
     val button: PointerButton? = null,
+    /** The step's name in a multi-point click, such as "Point 1" or "Play button". */
+    val name: String? = null,
+    /**
+     * Scroll and click only: when set, the step clicks the page's button or link with this label,
+     * found by the Chrome extension wherever it is, and [x] and [y] aren't used.
+     */
+    val text: String? = null,
 )
 
 /** When a routine ends by itself. */
@@ -93,18 +101,24 @@ data class ClickRoutine(
     override val kind: RoutineKind get() = if (target is ClickTarget.AtPoints) RoutineKind.Sequence else RoutineKind.Click
 }
 
-/** Scrolls a Chrome page to the bottom, stopping for videos, clicks [point], and repeats. */
+/** Scrolls a Chrome page to the bottom, stopping for videos, clicks its [steps] in order, and repeats. */
 @Serializable
 @SerialName("scrollClick")
 data class ScrollClickRoutine(
     override val id: String,
     override val name: String,
-    val point: ClickPoint,
+    /** The one spot a scroll and click had before it had steps; read as a single step. */
+    val point: ClickPoint? = null,
     val rounds: Int = DEFAULT_SCROLL_CLICK_ROUNDS,
     val pixelsPerSecond: Int = DEFAULT_PIXELS_PER_SECOND,
     val watchVideos: Boolean = true,
+    /** The steps clicked at the bottom of each page, top to bottom, each with its own wait and button. */
+    val points: List<ClickPoint> = emptyList(),
 ) : Routine {
     override val kind: RoutineKind get() = RoutineKind.ScrollClick
+
+    /** What it clicks at the bottom: its steps, or the one spot of a routine saved before steps. */
+    val steps: List<ClickPoint> get() = points.ifEmpty { listOfNotNull(point) }
 }
 
 /** Highlights the next button on a Chrome page; the user's key press clicks it. */
@@ -119,6 +133,21 @@ data class PageHelperRoutine(
     val soundOnVideoEnd: Boolean = true,
 ) : Routine {
     override val kind: RoutineKind get() = RoutineKind.PageHelper
+}
+
+/**
+ * Hands-on help with the Sagar Mein Yog course site: the next unfinished part, or Back to Course after
+ * a video, is highlighted, and each press of the user's key opens it. Videos start by themselves at the
+ * site's own speed. It never clicks without a key press, and never highlights quizzes or assessments.
+ */
+@Serializable
+@SerialName("courseHelper")
+data class CourseHelperRoutine(
+    override val id: String,
+    override val name: String,
+    val soundOnVideoEnd: Boolean = true,
+) : Routine {
+    override val kind: RoutineKind get() = RoutineKind.CourseHelper
 }
 
 /** Saved before routine types existed, a routine has no type and is a click routine. */

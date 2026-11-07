@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -35,7 +36,13 @@ sealed interface RunState {
 
     data class CountingDown(val routine: ClickRoutine, val secondsLeft: Int) : RunState
 
-    data class Running(val routine: ClickRoutine, val clicks: Long, val pause: PauseReason?) : RunState
+    data class Running(
+        val routine: ClickRoutine,
+        val clicks: Long,
+        val pause: PauseReason?,
+        /** When the next click is due, while waiting between clicks; null while clicking or paused. */
+        val nextClickAtMillis: Long? = null,
+    ) : RunState
 }
 
 /**
@@ -168,7 +175,10 @@ class ClickController(
         var outcome = RunOutcome.StoppedByUser
         try {
             var lastPause: PauseReason? = null
-            outcome = run.execute(routine, safety) { count, pause ->
+            val onWait: (Long) -> Unit = { at ->
+                mutableState.update { state -> (state as? RunState.Running)?.copy(nextClickAtMillis = at) ?: state }
+            }
+            outcome = run.execute(routine, safety, onWait) { count, pause ->
                 if (count > clicks) live.log(LiveSource.Click) { "Click $count" }
                 if (pause != lastPause) {
                     live.log(LiveSource.Routine) { if (pause == null) "Clicking again" else "Paused: $pause" }

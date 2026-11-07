@@ -310,6 +310,39 @@ class PageControllerTest {
         assertEquals(0, desktop.alerts)
     }
 
+    // Course helper routine
+
+    @Test
+    fun `given the course helper when started then Chrome is told, and each key press opens what's highlighted`() = runTest {
+        val controller = controller()
+        controller.start(CourseHelperRoutine("k", "Yoga course"))
+        runCurrent()
+        assertTrue(lastCommand().enabled)
+        assertTrue(lastCommand().course)
+        assertFalse(lastCommand().autoRun, "It never clicks by itself")
+
+        repeat(3) { found("1.2 Part:2") }
+        assertEquals(0, lastCommand().advance, "Highlighting alone clicks nothing")
+        press(HotKey.F8)
+        assertEquals(1, lastCommand().advance)
+
+        bridge.messages.tryEmit("""{"type":"videoEnded"}""")
+        runCurrent()
+        assertEquals(1, desktop.alerts)
+        finish(controller)
+        assertFalse(lastCommand().course)
+        assertEquals(1, history.added.single().clicks)
+    }
+
+    @Test
+    fun `given the course helper when the scroll key is pressed then nothing scrolls`() = runTest {
+        val controller = controller()
+        controller.start(CourseHelperRoutine("k", "Yoga course"))
+        press(HotKey.F9)
+        assertFalse(lastCommand().scrolling)
+        finish(controller)
+    }
+
     // Scroll and click routine
 
     @Test
@@ -364,6 +397,95 @@ class PageControllerTest {
         val record = history.added.single()
         assertEquals(RunOutcome.Completed, record.outcome)
         assertEquals("Next pages", record.routineName)
+    }
+
+    @Test
+    fun `given several steps when the bottom is reached then they're clicked in order, each after its wait and with its button`() = runTest {
+        val routine = ScrollClickRoutine(
+            "s", "Next pages", rounds = 1,
+            points = listOf(
+                ClickPoint(1, 1, 0, PointerButton.Left, "Play"),
+                ClickPoint(2, 2, 1_000, PointerButton.Right, "Next"),
+            ),
+        )
+        val buttons = mutableListOf<PointerButton>()
+        val controller = PageController(
+            object : DesktopAutomation by desktop {
+                override val pointer = object : PointerDevice by desktop.pointer {
+                    override fun click(at: ScreenPoint?, button: PointerButton, count: Int): Boolean {
+                        buttons += button
+                        return desktop.pointer.click(at, button, count)
+                    }
+                }
+            },
+            bridge, MutableStateFlow(AppPreferences()), backgroundScope, history, { currentTime }, { "run" },
+        )
+        runCurrent()
+        controller.start(routine)
+        runCurrent()
+        page(atBottom = true)
+        advanceTimeBy(2_200)
+        assertEquals(listOf<ScreenPoint?>(ScreenPoint(1, 1)), desktop.clicks, "The first step clicks once the page settles")
+        advanceTimeBy(500)
+        assertEquals(1, desktop.clicks.size, "The second waits its second")
+        advanceTimeBy(600)
+        runCurrent()
+        assertEquals(listOf<ScreenPoint?>(ScreenPoint(1, 1), ScreenPoint(2, 2)), desktop.clicks)
+        assertEquals(listOf(PointerButton.Left, PointerButton.Right), buttons)
+        assertEquals(RunOutcome.Completed, history.added.single().outcome)
+    }
+
+    @Test
+    fun `given a button step when its button is clicked in Chrome then the run goes on without moving the pointer`() = runTest {
+        val routine = ScrollClickRoutine(
+            "s", "Lessons", rounds = 1,
+            points = listOf(ClickPoint(0, 0, 0, null, "Back", text = "Back to Course")),
+        )
+        val controller = controller()
+        controller.start(routine)
+        runCurrent()
+        page(atBottom = true)
+        advanceTimeBy(2_200)
+        assertEquals("Back to Course", lastCommand().clickText)
+        val request = lastCommand().clickRequest
+        assertTrue(request > 0)
+        assertTrue(desktop.clicks.isEmpty(), "A button step doesn't click through the pointer")
+
+        bridge.messages.tryEmit("""{"type":"textClicked","request":$request,"label":"Back to Course"}""")
+        runCurrent()
+        advanceTimeBy(100)
+        runCurrent()
+        assertEquals(null, lastCommand().clickText, "Asked once, then cleared")
+        assertEquals(RunOutcome.Completed, history.added.single().outcome)
+        assertEquals(1, history.added.single().clicks)
+    }
+
+    @Test
+    fun `given a button that never appears when waited for then the run stops and says so`() = runTest {
+        val routine = ScrollClickRoutine("s", "Lessons", rounds = 1, points = listOf(ClickPoint(0, 0, 0, null, "Back", text = "Back to Course")))
+        val controller = controller()
+        controller.start(routine)
+        runCurrent()
+        page(atBottom = true)
+        advanceTimeBy(2_200 + 30_100)
+        runCurrent()
+        assertNull(controller.state.value.activity)
+        assertEquals(RunOutcome.ButtonNotFound, history.added.single().outcome)
+        assertEquals(null, lastCommand().clickText)
+    }
+
+    @Test
+    fun `given a click report for an older request when heard then it isn't taken for the current one`() = runTest {
+        val routine = ScrollClickRoutine("s", "Lessons", rounds = 1, points = listOf(ClickPoint(0, 0, 0, null, "Back", text = "Back to Course")))
+        val controller = controller()
+        controller.start(routine)
+        runCurrent()
+        page(atBottom = true)
+        advanceTimeBy(2_200)
+        bridge.messages.tryEmit("""{"type":"textClicked","request":0,"label":"Back to Course"}""")
+        advanceTimeBy(1_000)
+        assertTrue(controller.state.value.activity != null, "Still waiting for its own request")
+        finish(controller)
     }
 
     @Test

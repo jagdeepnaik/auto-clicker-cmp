@@ -136,7 +136,10 @@ class ClickControllerTest {
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(1, automation.clicks.size)
-        assertEquals(RunState.Running(routine, 1, null), controller.state.value)
+        val running = controller.state.value as RunState.Running
+        assertEquals(1, running.clicks)
+        // The click came after the 2 s countdown; the next is due a second after it.
+        assertEquals(3_000L, running.nextClickAtMillis)
         controller.stop()
     }
 

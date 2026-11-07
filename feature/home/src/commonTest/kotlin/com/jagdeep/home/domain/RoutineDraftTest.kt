@@ -17,7 +17,7 @@ class RoutineDraftTest {
             id = "r",
             name = "Refresh",
             target = ClickTarget.AtPoints(
-                listOf(ClickPoint(-20, 400, 750, PointerButton.Middle), ClickPoint(5, 6, 120_000, PointerButton.Right)),
+                listOf(ClickPoint(-20, 400, 750, PointerButton.Middle, "Play"), ClickPoint(5, 6, 120_000, PointerButton.Right, "Point 2")),
             ),
             button = PointerButton.Right,
             clicksPerAction = 2,
@@ -33,7 +33,26 @@ class RoutineDraftTest {
     @Test
     fun `given points saved before they had their own wait and button when edited then they show the routine's`() {
         val routine = ClickRoutine("r", "Old", target = ClickTarget.AtPoints(listOf(ClickPoint(1, 2))), button = PointerButton.Right, intervalMillis = 2_000)
-        assertEquals(listOf(PointDraft("1", "2", "2000", PointerButton.Right)), routine.toDraft().points)
+        assertEquals(listOf(PointDraft("1", "2", "2", IntervalUnit.Seconds, PointerButton.Right, "Point 1")), routine.toDraft().points)
+    }
+
+    @Test
+    fun `given a step's wait in a unit when read then it's in milliseconds, decimals included`() {
+        assertEquals(1_500L, PointDraft(delay = "1.5", delayUnit = IntervalUnit.Seconds).delayMillis)
+        assertEquals(120_000L, PointDraft(delay = "2", delayUnit = IntervalUnit.Minutes).delayMillis)
+        assertEquals(250L, PointDraft(delay = "250", delayUnit = IntervalUnit.Milliseconds).delayMillis)
+        assertEquals(null, PointDraft(delay = "soon").delayMillis)
+        assertEquals("1.5" to IntervalUnit.Seconds, delayDraft(1_500))
+        assertEquals("2" to IntervalUnit.Minutes, delayDraft(120_000))
+        assertEquals("250" to IntervalUnit.Milliseconds, delayDraft(250))
+    }
+
+    @Test
+    fun `given steps with blank or long names when saved then blanks get their default and long ones are refused`() {
+        val draft = valid.copy(targetMode = TargetMode.AtPoints, points = listOf(PointDraft("1", "2", name = " "), PointDraft("3", "4", name = "Play button")))
+        val saved = (draft.toRoutine("r") as ClickRoutine).target as ClickTarget.AtPoints
+        assertEquals(listOf("Point 1", "Play button"), saved.points.map { it.name })
+        assertTrue(draft.copy(points = listOf(PointDraft("1", "2", name = "x".repeat(41)))).validate().points != null)
     }
 
     @Test
@@ -43,7 +62,7 @@ class RoutineDraftTest {
         assertEquals(RunLimit.Passes(1), (points.toRoutine("r") as ClickRoutine).limit)
         assertTrue(points.copy(limitPasses = "0").validate().limit != null)
         assertTrue(points.copy(targetMode = TargetMode.AtPointer).validate().limit != null)
-        assertTrue(points.copy(points = listOf(PointDraft("1", "2", delayMillis = "5"))).validate().points != null, "Wait under 10 ms")
+        assertTrue(points.copy(points = listOf(PointDraft("1", "2", delay = "5", delayUnit = IntervalUnit.Milliseconds))).validate().points != null, "Wait under 10 ms")
     }
 
     @Test
@@ -103,10 +122,36 @@ class RoutineDraftTest {
     @Test
     fun `given a scroll and click draft when checked then it needs a spot and rounds in range`() {
         val draft = RoutineDraft(kind = RoutineKind.ScrollClick, name = "Pages")
-        assertEquals("Pick the spot to click.", draft.validate().points)
+        assertEquals("Add at least one step to click at the bottom.", draft.validate().points)
         val picked = draft.copy(points = listOf(PointDraft("640", "880")), rounds = "0")
         assertTrue(picked.validate().rounds != null)
         assertFalse(picked.copy(rounds = "5").validate().hasAny)
+    }
+
+    @Test
+    fun `given a scroll and click saved with one spot when edited then it becomes one step that clicks at once`() {
+        val old = ScrollClickRoutine("s", "Pages", ClickPoint(640, 880))
+        assertEquals(listOf(PointDraft("640", "880", "0", IntervalUnit.Milliseconds, PointerButton.Left, "Point 1")), old.toDraft().points)
+        val saved = old.toDraft().toRoutine("s") as ScrollClickRoutine
+        assertEquals(listOf(ClickPoint(640, 880, 0, PointerButton.Left, "Point 1")), saved.steps)
+    }
+
+    @Test
+    fun `given a scroll and click button step when checked and saved then it needs text and keeps it`() {
+        val draft = RoutineDraft(kind = RoutineKind.ScrollClick, name = "Lessons", points = listOf(PointDraft(byText = true, text = " ", name = "Back")))
+        assertEquals("Each button step needs the button's text.", draft.validate().points)
+        val ok = draft.copy(points = listOf(PointDraft(delay = "0", delayUnit = IntervalUnit.Milliseconds, byText = true, text = " Back to Course ", name = "Back")))
+        assertFalse(ok.validate().hasAny)
+        val saved = ok.toRoutine("s") as ScrollClickRoutine
+        assertEquals("Back to Course", saved.steps.single().text)
+        assertEquals(ok.points, saved.toDraft().points.map { it.copy(text = it.text) }.let { listOf(it.single().copy(text = " Back to Course ")) })
+    }
+
+    @Test
+    fun `given a course helper when edited and saved then it keeps its sound choice`() {
+        val routine = CourseHelperRoutine("k", "Yoga course", soundOnVideoEnd = false)
+        assertEquals(routine, routine.toDraft().toRoutine("k"))
+        assertFalse(routine.needsInputAccess(), "It clicks inside Chrome, not through the pointer")
     }
 
     @Test
@@ -117,7 +162,10 @@ class RoutineDraftTest {
 
     @Test
     fun `given Chrome routines when turned into drafts and back then nothing is lost`() {
-        val scroll = ScrollClickRoutine("s", "Pages", ClickPoint(640, 880), rounds = 7, pixelsPerSecond = 120, watchVideos = false)
+        val scroll = ScrollClickRoutine(
+            "s", "Pages", rounds = 7, pixelsPerSecond = 120, watchVideos = false,
+            points = listOf(ClickPoint(640, 880, 0, PointerButton.Left, "Next"), ClickPoint(10, 20, 1_500, PointerButton.Right, "Point 2")),
+        )
         val helper = PageHelperRoutine("h", "Course", words = listOf("Next", "Weiter"), pixelsPerSecond = 30, soundOnVideoEnd = false)
         assertEquals(scroll, scroll.toDraft().toRoutine("s"))
         assertEquals(helper, helper.toDraft().toRoutine("h"))

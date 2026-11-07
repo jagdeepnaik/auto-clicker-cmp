@@ -29,13 +29,21 @@ internal data class PageReading(
     val video: PageVideo = PageVideo.None,
 )
 
-enum class ScrollClickPhase { ReadingPage, WaitingForChrome, Scrolling, WatchingVideo, VideoNeedsPlay, AtBottom, WaitingForPage }
+enum class ScrollClickPhase { ReadingPage, WaitingForChrome, Scrolling, WatchingVideo, VideoNeedsPlay, AtBottom, ClickingSteps, WaitingForPage }
 
-data class ScrollClickProgress(val round: Int, val rounds: Int, val clicks: Long, val phase: ScrollClickPhase)
+/** [step] of [steps] is the step being clicked, or about to be, while [phase] is ClickingSteps. */
+data class ScrollClickProgress(
+    val round: Int,
+    val rounds: Int,
+    val clicks: Long,
+    val phase: ScrollClickPhase,
+    val step: Int = 0,
+    val steps: Int = 0,
+)
 
 /**
- * Scrolls to the bottom, stopping for any video until it ends, then clicks one point, waits for the
- * page to change, and repeats. Safety checks run throughout every wait, and it never clicks unless
+ * Scrolls to the bottom, stopping for any video until it ends, then clicks its steps in order, each
+ * after its own wait, waits for the page to change, and repeats. Safety checks run throughout every wait, and it never clicks unless
  * Chrome is in front.
  */
 internal class ScrollClickRun(
@@ -45,11 +53,12 @@ internal class ScrollClickRun(
     private val interruption: () -> RunOutcome?,
 ) {
     suspend fun execute(
-        point: ScreenPoint,
+        steps: List<ClickPoint>,
         rounds: Int,
         safety: ScrollClickSafety,
         pages: StateFlow<PageReading?>,
         setScrolling: (Boolean) -> Unit,
+        texts: TextClicker? = null,
         onProgress: (ScrollClickProgress) -> Unit,
     ): RunOutcome {
         var clicks = 0L
@@ -68,7 +77,7 @@ internal class ScrollClickRun(
         }
 
         for (round in 1..rounds) {
-            fun report(phase: ScrollClickPhase) = onProgress(ScrollClickProgress(round, rounds, clicks, phase))
+            fun report(phase: ScrollClickPhase, step: Int = 0) = onProgress(ScrollClickProgress(round, rounds, clicks, phase, step, steps.size))
 
             setScrolling(true)
             var heldMillis = 0L
@@ -113,9 +122,50 @@ internal class ScrollClickRun(
             }
 
             setScrolling(false)
-            if (!pointer.click(point, PointerButton.Left, 1)) return RunOutcome.Failed
-            clicks++
-            placedAt = point
+            for ((index, step) in steps.withIndex()) {
+                val number = index + 1
+                report(ScrollClickPhase.ClickingSteps, number)
+                // Each step's wait counts from the click before it; the first from reaching the bottom.
+                var waited = 0L
+                while (waited < (step.delayMillis ?: 0)) {
+                    safetyStop()?.let { return it }
+                    if (pages.value?.focused != false) waited += CHECK_MILLIS
+                    delay(CHECK_MILLIS)
+                }
+                // Never into another app: with Chrome away, wait for it to come back.
+                while (pages.value?.focused == false) {
+                    safetyStop()?.let { return it }
+                    placedAt = null
+                    report(ScrollClickPhase.WaitingForChrome, number)
+                    delay(CHECK_MILLIS)
+                }
+                safetyStop()?.let { return it }
+                val text = step.text?.takeIf { it.isNotBlank() }
+                if (text != null && texts != null) {
+                    // Chrome finds the button wherever it is; it may appear only after a video ends.
+                    val request = texts.request(text)
+                    var looked = 0L
+                    while (texts.clicked.value < request) {
+                        safetyStop()?.let {
+                            texts.clear()
+                            return it
+                        }
+                        if (pages.value?.focused != false) looked += CHECK_MILLIS
+                        if (looked >= BUTTON_WAIT_MILLIS) {
+                            texts.clear()
+                            return RunOutcome.ButtonNotFound
+                        }
+                        delay(CHECK_MILLIS)
+                    }
+                    texts.clear()
+                } else {
+                    val at = ScreenPoint(step.x, step.y)
+                    if (!pointer.click(at, step.button ?: PointerButton.Left, 1)) return RunOutcome.Failed
+                    placedAt = at
+                }
+                clicks++
+                report(ScrollClickPhase.ClickingSteps, number)
+            }
             report(ScrollClickPhase.WaitingForPage)
             if (round == rounds) return RunOutcome.Completed
 
@@ -142,10 +192,23 @@ internal class ScrollClickRun(
         /** Late-loading content can extend the page, so the bottom has to stay the bottom this long. */
         const val BOTTOM_HOLD_MILLIS = 2_000L
 
+        /** How long a button step waits for its button to appear, counting only while Chrome is in front. */
+        const val BUTTON_WAIT_MILLIS = 30_000L
+
         /** A click that changes nothing for this long won't: stop rather than keep clicking a dead end. */
         const val PAGE_CHANGE_TIMEOUT_MILLIS = 15_000L
         const val MOVE_TOLERANCE = 3
     }
+}
+
+/** Asks Chrome to click a button by its text; [clicked] rises to a request's number once that click is done. */
+internal interface TextClicker {
+    val clicked: StateFlow<Long>
+
+    /** Returns the request's number. */
+    fun request(text: String): Long
+
+    fun clear()
 }
 
 internal data class ScrollClickSafety(val stopWhenPointerMoves: Boolean, val stopAtScreenCorner: Boolean)

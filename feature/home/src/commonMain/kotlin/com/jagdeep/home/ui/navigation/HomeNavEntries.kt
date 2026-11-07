@@ -12,6 +12,8 @@ import androidx.navigation3.runtime.NavKey
 import com.jagdeep.home.domain.ClickController
 import com.jagdeep.home.domain.HomeViewModel
 import com.jagdeep.home.domain.RoutineEditorViewModel
+import com.jagdeep.home.domain.NoRoutineFiles
+import com.jagdeep.home.domain.RoutineFiles
 import com.jagdeep.home.domain.RoutineKind
 import com.jagdeep.home.domain.RoutineRepository
 import com.jagdeep.home.ui.screens.HomeScreen
@@ -31,10 +33,11 @@ fun EntryProviderScope<NavKey>.homeEntryProvider(
     repository: RoutineRepository,
     newRoutineId: () -> String,
     appIcon: @Composable () -> Unit,
+    routineFiles: RoutineFiles = NoRoutineFiles,
 ) {
     entry<RouteTopLevel.Home> {
         val viewModel: HomeViewModel = viewModel(factory = viewModelFactory {
-            initializer { HomeViewModel(controller, repository) }
+            initializer { HomeViewModel(controller, repository, routineFiles, newRoutineId) }
         })
         HomeScreen(
             viewModel,
